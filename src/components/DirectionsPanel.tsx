@@ -1,0 +1,1814 @@
+import L from 'leaflet';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FiArrowLeft, FiArrowUp, FiArrowDown, FiCopy, FiMapPin, FiNavigation, FiX } from 'react-icons/fi';
+import styled from 'styled-components';
+
+import type { RouteResult, TravelMode } from '../types/maps';
+import { calculateAirRouteWaypoints, calculateMaritimeRoute } from '../utils/maritimeRouting';
+
+const DirectionsContainer = styled.div`
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+`;
+
+const DirectionsHeader = styled.div`
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  border-radius: 8px 8px 0 0;
+`;
+
+const GoBackButton = styled.button`
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.2s;
+  margin-left: auto;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+`;
+
+const CloseButton = styled.button`
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  margin-right: auto;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+`;
+
+const HeaderTitle = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+`;
+
+const DirectionsContent = styled.div`
+  padding: 12px;
+`;
+
+const TravelModeSelector = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+`;
+
+const TransportModesSection = styled.div`
+  margin-bottom: 12px;
+`;
+
+const ModeSectionTitle = styled.div`
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 6px;
+  padding-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const TravelModeButton = styled.button<{ $active: boolean }>`
+  padding: 6px;
+  border: 1px solid ${(props) => (props.$active ? '#667eea' : '#dee2e6')};
+  background: ${(props) => (props.$active ? '#667eea' : 'white')};
+  color: ${(props) => (props.$active ? 'white' : '#666')};
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+
+  &:hover {
+    border-color: #667eea;
+    background: ${(props) => (props.$active ? '#5568d3' : '#f8f9fa')};
+  }
+`;
+
+const GetDirectionsButton = styled.button`
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+`;
+
+const RouteInfo = styled.div`
+  margin-top: 12px;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #667eea;
+`;
+
+const RouteInfoRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const RouteInfoLabel = styled.span`
+  font-size: 11px;
+  color: #666;
+  font-weight: 500;
+`;
+
+const RouteInfoValue = styled.span`
+  font-size: 12px;
+  color: #333;
+  font-weight: 600;
+`;
+
+const StepsContainer = styled.div`
+  margin-top: 12px;
+  max-height: 600px;
+  overflow-y: auto;
+`;
+
+const StepsTitle = styled.div`
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+`;
+
+const StepsTitleText = styled.span`
+  flex: 1;
+`;
+
+const CopyButton = styled.button<{ $copied?: boolean }>`
+  background: ${props => props.$copied ? '#34A853' : '#667eea'};
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
+const StepItem = styled.div`
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-left: 2px solid #e9ecef;
+  margin-bottom: 8px;
+  position: relative;
+
+  &:last-child {
+    border-left: 2px dashed #e9ecef;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 12px;
+    width: 10px;
+    height: 10px;
+    background: #667eea;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px #667eea;
+  }
+`;
+
+const StepNumber = styled.div`
+  font-size: 10px;
+  font-weight: 600;
+  color: #667eea;
+  min-width: 20px;
+`;
+
+const StepContent = styled.div`
+  flex: 1;
+`;
+
+const StepInstruction = styled.div`
+  font-size: 12px;
+  color: #333;
+  line-height: 1.4;
+  margin-bottom: 4px;
+`;
+
+const StepDistance = styled.div`
+  font-size: 10px;
+  color: #666;
+`;
+
+const SegmentHeader = styled.div`
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  
+  &:first-child {
+    margin-top: 0;
+  }
+`;
+
+const ErrorBox = styled.div`
+  margin-bottom: 12px;
+  padding: 10px;
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #856404;
+  line-height: 1.4;
+`;
+
+const ErrorTitle = styled.div`
+  font-weight: 600;
+  margin-bottom: 4px;
+`;
+
+const AddWaypointButton = styled.button`
+  width: 100%;
+  padding: 6px;
+  background: #f8f9fa;
+  border: 1px dashed #dee2e6;
+  color: #667eea;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-weight: 500;
+  transition: all 0.2s;
+  margin-bottom: 8px;
+
+  &:hover {
+    background: #e9ecef;
+    border-color: #667eea;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const SelectPointsButton = styled.button<{ $active?: boolean }>`
+  width: 100%;
+  padding: 12px;
+  background: ${props => props.$active ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#667eea'};
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+  box-shadow: ${props => props.$active ? '0 0 0 3px rgba(102, 126, 234, 0.3)' : 'none'};
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+`;
+
+const PointsList = styled.div`
+  margin-bottom: 12px;
+`;
+
+const PointsListItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+`;
+
+const PointNumber = styled.div<{ $type: 'origin' | 'waypoint' | 'destination' }>`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 11px;
+  color: white;
+  flex-shrink: 0;
+  background: ${props => 
+    props.$type === 'origin' ? '#34A853' :
+    props.$type === 'destination' ? '#EA4335' :
+    '#FF9800'
+  };
+`;
+
+const PointCoords = styled.div`
+  flex: 1;
+  color: #666;
+  font-size: 10px;
+`;
+
+const ReorderButtons = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+`;
+
+const ReorderButton = styled.button`
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: #667eea;
+  display: flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  font-size: 12px;
+
+  &:hover:not(:disabled) {
+    opacity: 1;
+  }
+  
+  &:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+  }
+`;
+
+const RemovePointButton = styled.button`
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #dc3545;
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+interface DirectionsPanelProps {
+  map: L.Map | null;
+  onRouteCalculated?: (result: RouteResult) => void;
+  markersMap?: Map<string, L.Marker>;
+  onShowDirections?: () => void;
+  onHideDirections?: () => void;
+  onClose?: () => void;
+}
+
+const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections, onHideDirections, onClose }: DirectionsPanelProps) => {
+  const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [destination, setDestination] = useState<{ lat: number; lng: number } | null>(null);
+  const [waypoints, setWaypoints] = useState<Array<{ lat: number; lng: number; id: string }>>([]);
+  const [isSelectingPoints, setIsSelectingPoints] = useState(false);
+  const [selectedPoints, setSelectedPoints] = useState<Array<{ lat: number; lng: number; id: string }>>([]);
+  const [hasCalculatedRoute, setHasCalculatedRoute] = useState(false);
+  const [travelMode, setTravelMode] = useState<TravelMode>('driving');
+  const [routeInfo, setRouteInfo] = useState<RouteResult | null>(null);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [routeSteps, setRouteSteps] = useState<RouteResult['steps']>([]);
+  const [copiedDirections, setCopiedDirections] = useState(false);
+  
+  const originMarkerRef = useRef<L.Marker | null>(null);
+  const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const selectedPointMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const selectedPointOriginalIconsRef = useRef<Map<string, L.Icon | L.DivIcon>>(new Map());
+  const originOriginalIconRef = useRef<L.Icon | L.DivIcon | null>(null);
+  const destinationOriginalIconRef = useRef<L.Icon | L.DivIcon | null>(null);
+  const routeLineRef = useRef<L.Polyline | null>(null);
+  const clickListenerRef = useRef<L.LeafletEventHandlerFnMap | null>(null);
+
+  // Helper function to find marker at coordinates or by ID
+  const findMarkerAtLocation = useCallback((lat: number, lng: number, id?: string): L.Marker | null => {
+    if (!markersMap) return null;
+    
+    // Try to find by ID first if provided
+    if (id) {
+      const marker = markersMap.get(id);
+      if (marker) return marker;
+    }
+    
+    const coordKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    // Try to find by coordinate key
+    let marker = markersMap.get(`coord:${coordKey}`);
+    
+    if (!marker) {
+      // Search through all markers to find one at the same location
+      markersMap.forEach((m, markerId) => {
+        if (markerId.startsWith('coord:')) return; // Skip coordinate keys
+        const markerLatLng = m.getLatLng();
+        const markerKey = `${markerLatLng.lat.toFixed(6)},${markerLatLng.lng.toFixed(6)}`;
+        if (markerKey === coordKey) {
+          marker = m;
+        }
+      });
+    }
+    
+    return marker || null;
+  }, [markersMap]);
+
+  // Helper function to restore original icon
+  const restoreOriginalIcon = useCallback((marker: L.Marker, originalIcon: L.Icon | L.DivIcon | null) => {
+    if (originalIcon) {
+      marker.setIcon(originalIcon);
+    }
+  }, []);
+
+  // Add a point to the route sequence
+  const addPointToRoute = useCallback((lat: number, lng: number, id?: string) => {
+    if (!map) return;
+    
+    const pointId = `point-${Date.now()}`;
+    const newPoint = { lat, lng, id: pointId };
+    
+    setSelectedPoints(prev => {
+      const updated = [...prev, newPoint];
+      
+      // Update origin, waypoints, and destination based on position
+      if (updated.length === 1) {
+        // First point is origin
+        setOrigin(newPoint);
+        setWaypoints([]);
+        setDestination(null);
+      } else if (updated.length === 2) {
+        // Second point becomes destination
+        setDestination(newPoint);
+        setWaypoints([]);
+      } else {
+        // 3+ points: first is origin, last is destination, middle are waypoints
+        setOrigin(updated[0]);
+        setDestination(updated[updated.length - 1]);
+        setWaypoints(updated.slice(1, -1));
+      }
+      
+      return updated;
+    });
+    
+    // Find existing marker or create new one
+    const existingMarker = findMarkerAtLocation(lat, lng, id);
+    const pointIndex = selectedPoints.length;
+    
+    // Determine marker style
+    let markerHtml: string;
+    
+    if (pointIndex === 0) {
+      // First point (origin)
+      markerHtml = '<div style="background: #34A853; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">A</div>';
+    } else {
+      // Other points (waypoints or destination)
+      const displayNumber = pointIndex;
+      markerHtml = `<div style="background: #667eea; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 12px;">${displayNumber}</div>`;
+    }
+    
+    if (existingMarker) {
+      // Save the original icon before modifying
+      const originalIcon = existingMarker.getIcon();
+      if (originalIcon) {
+        selectedPointOriginalIconsRef.current.set(pointId, originalIcon);
+      }
+      
+      existingMarker.setIcon(L.divIcon({
+        className: 'custom-marker',
+        html: markerHtml,
+        iconSize: [30, 30],
+        iconAnchor: [15, 30],
+      }));
+      selectedPointMarkersRef.current.set(pointId, existingMarker);
+    } else {
+      const marker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: 'custom-marker',
+          html: markerHtml,
+          iconSize: [30, 30],
+          iconAnchor: [15, 30],
+        }),
+      }).addTo(map);
+      selectedPointMarkersRef.current.set(pointId, marker);
+    }
+  }, [map, findMarkerAtLocation, selectedPoints.length]);
+
+  // Remove a point from the route
+  const removePointFromRoute = useCallback((pointId: string) => {
+    setSelectedPoints(prev => {
+      const updated = prev.filter(p => p.id !== pointId);
+      
+      // Update origin, waypoints, and destination
+      if (updated.length === 0) {
+        setOrigin(null);
+        setWaypoints([]);
+        setDestination(null);
+      } else if (updated.length === 1) {
+        setOrigin(updated[0]);
+        setWaypoints([]);
+        setDestination(null);
+      } else if (updated.length === 2) {
+        setOrigin(updated[0]);
+        setDestination(updated[1]);
+        setWaypoints([]);
+      } else {
+        setOrigin(updated[0]);
+        setDestination(updated[updated.length - 1]);
+        setWaypoints(updated.slice(1, -1));
+      }
+      
+      return updated;
+    });
+    
+    // Restore original marker icon or remove marker
+    const marker = selectedPointMarkersRef.current.get(pointId);
+    if (marker) {
+      const originalIcon = selectedPointOriginalIconsRef.current.get(pointId);
+      
+      if (originalIcon) {
+        // This was an existing marker - restore its original icon
+        marker.setIcon(originalIcon);
+        selectedPointOriginalIconsRef.current.delete(pointId);
+      } else {
+        // This was a new marker we created - remove it
+        marker.remove();
+      }
+      
+      selectedPointMarkersRef.current.delete(pointId);
+    }
+    
+    // Renumber remaining markers
+    setTimeout(() => {
+      selectedPoints.forEach((point, index) => {
+        if (point.id === pointId) return;
+        
+        const marker = selectedPointMarkersRef.current.get(point.id);
+        if (marker) {
+          let markerHtml: string;
+          
+          if (index === 0) {
+            markerHtml = '<div style="background: #34A853; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">A</div>';
+          } else {
+            markerHtml = `<div style="background: #667eea; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 12px;">${index}</div>`;
+          }
+          
+          marker.setIcon(L.divIcon({
+            className: 'custom-marker',
+            html: markerHtml,
+            iconSize: [30, 30],
+            iconAnchor: [15, 30],
+          }));
+        }
+      });
+    }, 10);
+    
+    // Clear route
+    setRouteInfo(null);
+    setRouteSteps([]);
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+  }, [selectedPoints]);
+
+  // Reorder a point in the route (move up or down)
+  const reorderPoint = useCallback((pointId: string, direction: 'up' | 'down') => {
+    setSelectedPoints(prev => {
+      const currentIndex = prev.findIndex(p => p.id === pointId);
+      if (currentIndex === -1) return prev;
+      
+      const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      
+      // Can't move beyond bounds
+      if (newIndex < 0 || newIndex >= prev.length) return prev;
+      
+      // Swap positions
+      const updated = [...prev];
+      [updated[currentIndex], updated[newIndex]] = [updated[newIndex], updated[currentIndex]];
+      
+      // Update origin, waypoints, and destination
+      if (updated.length === 1) {
+        setOrigin(updated[0]);
+        setWaypoints([]);
+        setDestination(null);
+      } else if (updated.length === 2) {
+        setOrigin(updated[0]);
+        setDestination(updated[1]);
+        setWaypoints([]);
+      } else {
+        setOrigin(updated[0]);
+        setDestination(updated[updated.length - 1]);
+        setWaypoints(updated.slice(1, -1));
+      }
+      
+      return updated;
+    });
+    
+    // Renumber markers after reorder
+    setTimeout(() => {
+      selectedPoints.forEach((point) => {
+        const currentIndex = selectedPoints.findIndex(p => p.id === point.id);
+        if (currentIndex === -1) return;
+        
+        const marker = selectedPointMarkersRef.current.get(point.id);
+        if (marker) {
+          let markerHtml: string;
+          
+          if (currentIndex === 0) {
+            markerHtml = '<div style="background: #34A853; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">A</div>';
+          } else if (currentIndex === selectedPoints.length - 1) {
+            markerHtml = '<div style="background: #EA4335; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">B</div>';
+          } else {
+            markerHtml = `<div style="background: #FF9800; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 12px;">${currentIndex}</div>`;
+          }
+          
+          marker.setIcon(L.divIcon({
+            className: 'custom-marker',
+            html: markerHtml,
+            iconSize: [30, 30],
+            iconAnchor: [15, 30],
+          }));
+        }
+      });
+    }, 10);
+    
+    // Clear route since order changed
+    setRouteInfo(null);
+    setRouteSteps([]);
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+  }, [selectedPoints]);
+
+  // Toggle point selection mode
+  const togglePointSelection = useCallback(() => {
+    setIsSelectingPoints(prev => {
+      const newValue = !prev;
+      
+      // Hide panel when enabling selection mode
+      if (newValue && onHideDirections) {
+        onHideDirections();
+      }
+      // Show panel when disabling selection mode
+      if (!newValue && onShowDirections) {
+        onShowDirections();
+      }
+      
+      return newValue;
+    });
+  }, [onHideDirections, onShowDirections]);
+
+  // Clear all points
+  const clearAllPoints = useCallback(() => {
+    // Restore original icons or remove markers
+    selectedPointMarkersRef.current.forEach((marker, pointId) => {
+      const originalIcon = selectedPointOriginalIconsRef.current.get(pointId);
+      
+      if (originalIcon) {
+        // This was an existing marker - restore its original icon
+        marker.setIcon(originalIcon);
+      } else {
+        // This was a new marker we created - remove it
+        marker.remove();
+      }
+    });
+    
+    selectedPointMarkersRef.current.clear();
+    selectedPointOriginalIconsRef.current.clear();
+    
+    setSelectedPoints([]);
+    setOrigin(null);
+    setWaypoints([]);
+    setDestination(null);
+    setIsSelectingPoints(false);
+    setHasCalculatedRoute(false);
+    
+    // Clear route
+    setRouteInfo(null);
+    setRouteSteps([]);
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+  }, []);
+
+  // Handle map clicks to select points sequentially
+  useEffect(() => {
+    if (!map) return;
+
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
+      if (!isSelectingPoints) return;
+      const { lat, lng } = e.latlng;
+      
+      // Try to find existing marker at clicked location first
+      const existingMarker = findMarkerAtLocation(lat, lng);
+      if (existingMarker) {
+        // If marker exists, use its coordinates (more precise)
+        const markerLatLng = existingMarker.getLatLng();
+        addPointToRoute(markerLatLng.lat, markerLatLng.lng);
+      } else {
+        // No marker, use clicked coordinates
+        addPointToRoute(lat, lng);
+      }
+    };
+
+    if (isSelectingPoints) {
+      map.on('click', handleMapClick);
+      clickListenerRef.current = { click: handleMapClick };
+    } else {
+      if (clickListenerRef.current) {
+        map.off('click', clickListenerRef.current.click);
+        clickListenerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (clickListenerRef.current) {
+        map.off('click', clickListenerRef.current.click);
+      }
+    };
+  }, [map, isSelectingPoints, addPointToRoute, findMarkerAtLocation]);
+
+  // Listen for marker clicks when in selection mode
+  useEffect(() => {
+    const handleMarkerClick = (e: Event) => {
+      if (!isSelectingPoints) return;
+      const customEvent = e as CustomEvent;
+      const { lat, lng, id } = customEvent.detail;
+      addPointToRoute(lat, lng, id);
+    };
+
+    const handleLocationClick = (e: Event) => {
+      if (!isSelectingPoints) return;
+      const customEvent = e as CustomEvent;
+      const { lat, lng, id } = customEvent.detail;
+      addPointToRoute(lat, lng, id);
+    };
+
+    // Listen for selection mode check requests
+    const handleSelectionModeCheck = () => {
+      const responseEvent = new CustomEvent('selectionModeStatus', {
+        detail: isSelectingPoints
+      });
+      window.dispatchEvent(responseEvent);
+    };
+
+    window.addEventListener('markerClickForDirections', handleMarkerClick);
+    window.addEventListener('locationClickForDirections', handleLocationClick);
+    window.addEventListener('isSelectingPoint', handleSelectionModeCheck);
+
+    return () => {
+      window.removeEventListener('markerClickForDirections', handleMarkerClick);
+      window.removeEventListener('locationClickForDirections', handleLocationClick);
+      window.removeEventListener('isSelectingPoint', handleSelectionModeCheck);
+    };
+  }, [isSelectingPoints, addPointToRoute]);
+
+  // Listen for "Directions from here" / "Directions to here" button clicks
+  useEffect(() => {
+    const handleSetOrigin = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { lat, lng, id } = customEvent.detail || {};
+      
+      // Clear any existing route
+      if (hasCalculatedRoute) {
+        clearAllPoints();
+      }
+      
+      // Add this as the first point
+      addPointToRoute(lat, lng, id);
+      
+      // Enable selection mode so user can continue adding points
+      setIsSelectingPoints(true);
+      
+      // Hide panel to show the map
+      if (onHideDirections) {
+        onHideDirections();
+      }
+    };
+
+    const handleSetDestination = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { lat, lng, id } = customEvent.detail || {};
+      
+      // If no points yet, ignore (need origin first)
+      if (selectedPoints.length === 0) {
+        // Could show a message: "Please select a starting point first"
+        return;
+      }
+      
+      // Add this as the next point in the sequence
+      addPointToRoute(lat, lng, id);
+    };
+
+    window.addEventListener('setDirectionsOrigin', handleSetOrigin);
+    window.addEventListener('setDirectionsDestination', handleSetDestination);
+
+    return () => {
+      window.removeEventListener('setDirectionsOrigin', handleSetOrigin);
+      window.removeEventListener('setDirectionsDestination', handleSetDestination);
+    };
+  }, [addPointToRoute, hasCalculatedRoute, clearAllPoints, selectedPoints.length, onHideDirections]);
+
+  // Don't cleanup markers/route on unmount - they should persist even when panel is hidden
+  // Only cleanup when component is actually destroyed (not just hidden)
+
+  // Calculate great circle distance using Haversine formula (for planes and ships)
+  const calculateGreatCircleDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
+  };
+
+  const calculateRoute = async () => {
+    if (!map || !origin || !destination) return;
+
+    setIsCalculating(true);
+    setRouteInfo(null);
+    setApiError(null);
+    setRouteSteps([]);
+    
+    // Stop point selection and mark route as calculated
+    setIsSelectingPoints(false);
+    setHasCalculatedRoute(true);
+
+    // Clear previous route
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+
+    try {
+      // Handle air/sea travel modes (plane, boat, container-ship) with realistic routing
+      if (travelMode === 'plane' || travelMode === 'boat' || travelMode === 'container-ship') {
+        // Calculate duration based on travel mode
+        let speedKmh: number;
+        let modeEmoji: string;
+        let modeName: string;
+        let routeColor: string;
+        
+        if (travelMode === 'plane') {
+          speedKmh = 850; // Commercial plane cruising speed
+          modeEmoji = '✈️';
+          modeName = 'Commercial Plane';
+          routeColor = '#4A90E2';
+        } else if (travelMode === 'container-ship') {
+          speedKmh = 41; // Container ship average speed (22 knots)
+          modeEmoji = '🚢';
+          modeName = 'Container Ship';
+          routeColor = '#2ECC71';
+        } else { // boat
+          speedKmh = 37; // Recreational boat average speed (20 knots)
+          modeEmoji = '⛵';
+          modeName = 'Boat';
+          routeColor = '#3498DB';
+        }
+        
+        // Build route with user-defined waypoints or automatic waypoints
+        let routeWaypoints: Array<{ lat: number; lng: number }>;
+        
+        if (waypoints.length > 0) {
+          // User has defined manual waypoints - use them directly
+          routeWaypoints = [origin];
+          
+          // Add each waypoint and calculate segments
+          for (const waypoint of waypoints) {
+            const prevPoint = routeWaypoints[routeWaypoints.length - 1];
+            
+            if (travelMode === 'plane') {
+              // Add great circle segments between waypoints
+              const segment = calculateAirRouteWaypoints(prevPoint, waypoint, 10);
+              routeWaypoints.push(...segment.slice(1)); // Skip first point (duplicate)
+            } else {
+              // For maritime, calculate route avoiding land between each waypoint pair
+              const segment = await calculateMaritimeRoute(prevPoint, waypoint);
+              routeWaypoints.push(...segment.slice(1)); // Skip first point (duplicate)
+            }
+          }
+          
+          // Add final segment to destination
+          const lastWaypoint = routeWaypoints[routeWaypoints.length - 1];
+          if (travelMode === 'plane') {
+            const finalSegment = calculateAirRouteWaypoints(lastWaypoint, destination, 10);
+            routeWaypoints.push(...finalSegment.slice(1));
+          } else {
+            const finalSegment = await calculateMaritimeRoute(lastWaypoint, destination);
+            routeWaypoints.push(...finalSegment.slice(1));
+          }
+        } else {
+          // No manual waypoints - use automatic routing
+          if (travelMode === 'plane') {
+            // For planes, use great circle route with waypoints
+            routeWaypoints = calculateAirRouteWaypoints(origin, destination, 20);
+          } else {
+            // For boats and ships, use maritime routing that avoids land
+            routeWaypoints = await calculateMaritimeRoute(origin, destination);
+          }
+        }
+        
+        // Calculate total distance along the route
+        let totalDistanceKm = 0;
+        for (let i = 0; i < routeWaypoints.length - 1; i++) {
+          const wp1 = routeWaypoints[i];
+          const wp2 = routeWaypoints[i + 1];
+          totalDistanceKm += calculateGreatCircleDistance(wp1.lat, wp1.lng, wp2.lat, wp2.lng);
+        }
+        
+        const durationHours = totalDistanceKm / speedKmh;
+        const durationSeconds = durationHours * 3600;
+        
+        // Convert waypoints to geometry format [lat, lng]
+        const geometry: [number, number][] = routeWaypoints.map(wp => [wp.lat, wp.lng]);
+        
+        // Draw the route on the map
+        const polyline = L.polyline(geometry as L.LatLngExpression[], {
+          color: routeColor,
+          weight: 4,
+          opacity: 0.8,
+          dashArray: travelMode === 'plane' ? '10, 10' : undefined, // Dashed line for planes
+          interactive: true,
+        }).addTo(map);
+        
+        routeLineRef.current = polyline;
+        
+        // Fit map to route
+        map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+        
+        // Format distance and duration
+        const distance = `${totalDistanceKm.toFixed(2)} km`;
+        const duration = formatDuration(durationSeconds);
+        
+        // Create step instructions based on waypoints
+        const steps: RouteResult['steps'] = [];
+        
+        if (travelMode === 'plane') {
+          steps.push({
+            instruction: `${modeEmoji} Depart by ${modeName} - following great circle route`,
+            distance: totalDistanceKm * 1000,
+            duration: durationSeconds,
+            coordinates: geometry,
+          });
+        } else {
+          // For maritime routes, create steps for each major leg
+          steps.push({
+            instruction: `${modeEmoji} Depart by ${modeName} - following maritime route (avoiding land)`,
+            distance: totalDistanceKm * 1000,
+            duration: durationSeconds,
+            coordinates: geometry,
+          });
+          
+          // Add waypoint notifications if there are intermediate points
+          if (routeWaypoints.length > 2) {
+            const waypointInfo = `Route passes through ${routeWaypoints.length - 2} waypoint${routeWaypoints.length > 3 ? 's' : ''} to avoid landmasses`;
+            steps.push({
+              instruction: `🗺️ ${waypointInfo}`,
+              distance: 0,
+              duration: 0,
+              coordinates: [],
+            });
+          }
+        }
+        
+        steps.push({
+          instruction: '🏁 Arrive at destination',
+          distance: 0,
+          duration: 0,
+          coordinates: [[destination.lat, destination.lng]],
+        });
+        
+        // Add popup to route polyline
+        const routeType = travelMode === 'plane' ? 'Great Circle Route' : 'Maritime Route';
+        const routePopupContent = `
+          <div style="padding: 8px; min-width: 200px;">
+            <div style="margin-bottom: 8px;">
+              <strong>${modeEmoji} ${modeName}</strong>
+            </div>
+            <div style="margin-bottom: 4px; font-size: 10px; color: #888;">
+              ${routeType}
+            </div>
+            <div style="margin-bottom: 4px;">
+              <strong>Distance:</strong> ${distance}
+            </div>
+            <div style="margin-bottom: 4px;">
+              <strong>Duration:</strong> ${duration}
+            </div>
+            <div style="margin-bottom: 8px; font-size: 10px; color: #666;">
+              Average speed: ${speedKmh} km/h
+            </div>
+            ${routeWaypoints.length > 2 ? `<div style="margin-bottom: 8px; font-size: 10px; color: #666;">
+              Via ${routeWaypoints.length - 2} waypoint${routeWaypoints.length > 3 ? 's' : ''}
+            </div>` : ''}
+            <button 
+              id="show-directions-instructions"
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 600;
+                transition: background 0.2s;
+              "
+              onmouseover="this.style.background='#5568d3'"
+              onmouseout="this.style.background='#667eea'"
+            >
+              📋 See Details
+            </button>
+          </div>
+        `;
+        
+        polyline.bindPopup(routePopupContent, {
+          className: 'route-popup',
+          closeButton: true,
+        });
+        
+        polyline.on('click', (e: L.LeafletMouseEvent) => {
+          polyline.openPopup(e.latlng);
+        });
+        
+        const handlePopupOpen = () => {
+          setTimeout(() => {
+            const showDirectionsButton = document.getElementById('show-directions-instructions');
+            if (showDirectionsButton) {
+              const newButton = showDirectionsButton.cloneNode(true) as HTMLButtonElement;
+              showDirectionsButton.parentNode?.replaceChild(newButton, showDirectionsButton);
+              
+              newButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (onShowDirections) {
+                  onShowDirections();
+                } else {
+                  const event = new CustomEvent('showDirectionsPanel');
+                  window.dispatchEvent(event);
+                }
+                polyline.closePopup();
+              });
+            }
+          }, 100);
+        };
+        
+        polyline.on('popupopen', handlePopupOpen);
+        
+        const routeResult: RouteResult = {
+          distance,
+          duration,
+          steps,
+          geometry,
+        };
+
+        setRouteInfo(routeResult);
+        setRouteSteps(steps);
+
+        if (onRouteCalculated) {
+          onRouteCalculated(routeResult);
+        }
+        
+        if (onHideDirections) {
+          onHideDirections();
+        }
+        
+        setIsCalculating(false);
+        return;
+      }
+
+      // Use OSRM (Open Source Routing Machine) for land-based travel - free, no API key required
+      const profile = travelMode === 'driving' ? 'driving' :
+                     travelMode === 'walking' ? 'walking' :
+                     travelMode === 'cycling' ? 'cycling' :
+                     'driving';
+      
+      // Build coordinates string with all waypoints
+      // OSRM format: {lng1},{lat1};{lng2},{lat2};{lng3},{lat3}...
+      let coordinatesArray = [`${origin.lng},${origin.lat}`];
+      
+      // Add all waypoints in order
+      waypoints.forEach(wp => {
+        coordinatesArray.push(`${wp.lng},${wp.lat}`);
+      });
+      
+      // Add destination
+      coordinatesArray.push(`${destination.lng},${destination.lat}`);
+      
+      const coordinates = coordinatesArray.join(';');
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coordinates}?overview=full&geometries=geojson&steps=true`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Route calculation failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const geometry = route.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]] as [number, number]);
+        
+        // Draw the route on the map
+        const polyline = L.polyline(geometry as L.LatLngExpression[], {
+          color: '#667eea',
+          weight: 4,
+          opacity: 0.8,
+          interactive: true, // Make it clickable
+        }).addTo(map);
+        
+        routeLineRef.current = polyline;
+        
+        // Fit map to route
+        map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+
+        // Format distance and duration (OSRM returns in meters and seconds)
+        const distanceKm = (route.distance || 0) / 1000;
+        const durationSeconds = route.duration || 0;
+        
+        const distance = distanceKm >= 1 
+          ? `${distanceKm.toFixed(2)} km`
+          : `${(distanceKm * 1000).toFixed(0)} m`;
+        const duration = formatDuration(durationSeconds);
+        
+        // Build segment breakdown if there are waypoints
+        let segmentInfo = '';
+        if (route.legs && route.legs.length > 1) {
+          segmentInfo = '<div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #dee2e6;"><div style="font-size: 11px; font-weight: 600; margin-bottom: 6px; color: #667eea;">Route Segments:</div>';
+          
+          route.legs.forEach((leg: any, index: number) => {
+            const legDistanceKm = (leg.distance || 0) / 1000;
+            const legDuration = formatDuration(leg.duration || 0);
+            const legDistance = legDistanceKm >= 1 
+              ? `${legDistanceKm.toFixed(2)} km`
+              : `${(legDistanceKm * 1000).toFixed(0)} m`;
+            
+            let segmentLabel = '';
+            if (index === 0) {
+              segmentLabel = waypoints.length > 0 ? `Start → Via ${index + 1}` : 'Start → End';
+            } else if (index === route.legs.length - 1) {
+              segmentLabel = `Via ${index} → End`;
+            } else {
+              segmentLabel = `Via ${index} → Via ${index + 1}`;
+            }
+            
+            segmentInfo += `
+              <div style="font-size: 10px; margin-bottom: 4px; padding: 4px; background: #f8f9fa; border-radius: 3px;">
+                <div style="font-weight: 500; color: #333; margin-bottom: 2px;">${segmentLabel}</div>
+                <div style="color: #666;">${legDistance} • ${legDuration}</div>
+              </div>
+            `;
+          });
+          
+          segmentInfo += '</div>';
+        }
+        
+        // Add popup to route polyline
+        const routePopupContent = `
+          <div style="padding: 8px; min-width: 220px; max-height: 400px; overflow-y: auto;">
+            <div style="margin-bottom: 8px;">
+              <strong>📍 Route Information</strong>
+            </div>
+            <div style="margin-bottom: 4px;">
+              <strong>Total Distance:</strong> ${distance}
+            </div>
+            <div style="margin-bottom: 8px;">
+              <strong>Total Duration:</strong> ${duration}
+            </div>
+            ${segmentInfo}
+            <button 
+              id="show-directions-instructions"
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 600;
+                transition: background 0.2s;
+                margin-top: 8px;
+              "
+              onmouseover="this.style.background='#5568d3'"
+              onmouseout="this.style.background='#667eea'"
+            >
+              📋 See Turn-by-Turn Directions
+            </button>
+          </div>
+        `;
+        
+        // Bind popup to polyline - opens when clicking anywhere on the route
+        polyline.bindPopup(routePopupContent, {
+          className: 'route-popup',
+          closeButton: true,
+        });
+        
+        // Make polyline clickable to open the popup
+        polyline.on('click', (e: L.LeafletMouseEvent) => {
+          polyline.openPopup(e.latlng);
+        });
+        
+        // Add click handler to show directions panel when button is clicked
+        const handlePopupOpen = () => {
+          // Small delay to ensure popup is fully rendered
+          setTimeout(() => {
+            const showDirectionsButton = document.getElementById('show-directions-instructions');
+            console.log('Popup opened, looking for button:', showDirectionsButton);
+            if (showDirectionsButton) {
+              console.log('Setting up directions button handler, onShowDirections:', !!onShowDirections);
+              
+              // Remove any existing listeners by cloning
+              const newButton = showDirectionsButton.cloneNode(true) as HTMLButtonElement;
+              showDirectionsButton.parentNode?.replaceChild(newButton, showDirectionsButton);
+              
+              newButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('Directions button clicked!');
+                if (onShowDirections) {
+                  console.log('Calling onShowDirections callback');
+                  onShowDirections();
+                } else {
+                  console.log('No callback, dispatching event');
+                  // Fallback: dispatch event to show directions
+                  const event = new CustomEvent('showDirectionsPanel');
+                  window.dispatchEvent(event);
+                }
+                // Close popup
+                polyline.closePopup();
+              });
+            } else {
+              console.warn('Directions button not found in popup');
+            }
+          }, 100);
+        };
+        
+        polyline.on('popupopen', handlePopupOpen);
+        
+        // Make polyline clickable - clicking anywhere on the route opens the popup
+        polyline.on('click', (e: L.LeafletMouseEvent) => {
+          polyline.openPopup(e.latlng);
+        });
+
+        // Extract turn-by-turn directions from ALL legs (includes waypoints)
+        const steps: RouteResult['steps'] = [];
+        
+        // OSRM returns one leg per segment between waypoints
+        if (route.legs && route.legs.length > 0) {
+          route.legs.forEach((leg: any, legIndex: number) => {
+            // Add segment header if there are multiple legs (waypoints)
+            if (route.legs.length > 1) {
+              let segmentLabel = '';
+              if (legIndex === 0) {
+                segmentLabel = waypoints.length > 0 ? `Start → Via ${legIndex + 1}` : 'Start → End';
+              } else if (legIndex === route.legs.length - 1) {
+                segmentLabel = `Via ${legIndex} → End`;
+              } else {
+                segmentLabel = `Via ${legIndex} → Via ${legIndex + 1}`;
+              }
+              
+              const legDistanceKm = (leg.distance || 0) / 1000;
+              const legDuration = formatDuration(leg.duration || 0);
+              const legDistance = legDistanceKm >= 1 
+                ? `${legDistanceKm.toFixed(2)} km`
+                : `${(legDistanceKm * 1000).toFixed(0)} m`;
+              
+              // Add segment header as a special step
+              steps.push({
+                instruction: `${segmentLabel} (${legDistance} • ${legDuration})`,
+                distance: leg.distance || 0,
+                duration: leg.duration || 0,
+                coordinates: [],
+                segmentIndex: legIndex,
+                isSegmentStart: true,
+                segmentLabel,
+              });
+            }
+            
+            if (leg.steps && leg.steps.length > 0) {
+              leg.steps.forEach((step: any) => {
+                // OSRM step geometry is in [lng, lat] format
+                const stepCoords = step.geometry?.coordinates 
+                  ? step.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]] as [number, number])
+                  : [];
+                
+                // Build a better instruction with street name
+                let instruction = '';
+                const maneuverType = step.maneuver?.type || '';
+                const maneuverModifier = step.maneuver?.modifier || '';
+                const streetName = Array.isArray(step.name) ? step.name[0] : (step.name || '');
+                const ref = Array.isArray(step.ref) ? step.ref[0] : (step.ref || '');
+                
+                // Format instruction based on maneuver type and modifier
+                if (maneuverType === 'depart') {
+                  instruction = `Head ${maneuverModifier || 'straight'}`;
+                } else if (maneuverType === 'arrive') {
+                  // Check if this is arriving at a waypoint or final destination
+                  if (legIndex < route.legs.length - 1) {
+                    instruction = `Arrive at waypoint ${legIndex + 1}`;
+                  } else {
+                    instruction = 'Arrive at destination';
+                  }
+                } else if (maneuverType === 'turn') {
+                  const direction = maneuverModifier === 'left' ? 'left' : 
+                                  maneuverModifier === 'right' ? 'right' : 
+                                  maneuverModifier === 'sharp left' ? 'sharp left' :
+                                  maneuverModifier === 'sharp right' ? 'sharp right' :
+                                  maneuverModifier === 'slight left' ? 'slight left' :
+                                  maneuverModifier === 'slight right' ? 'slight right' : 'straight';
+                  instruction = `Turn ${direction}`;
+                } else if (maneuverType === 'merge') {
+                  instruction = 'Merge';
+                } else if (maneuverType === 'ramp') {
+                  instruction = 'Take the ramp';
+                } else if (maneuverType === 'fork') {
+                  const direction = maneuverModifier === 'left' ? 'left fork' : 
+                                  maneuverModifier === 'right' ? 'right fork' : 'fork';
+                  instruction = `Take the ${direction}`;
+                } else if (maneuverType === 'roundabout') {
+                  const exit = step.maneuver?.exit || '';
+                  instruction = `Enter roundabout and take exit ${exit}`;
+                } else if (maneuverType === 'continue') {
+                  instruction = 'Continue straight';
+                } else {
+                  // Use the raw instruction if available, otherwise use type
+                  instruction = step.maneuver?.instruction || maneuverType || 'Continue';
+                }
+                
+                // Add street name or ref if available
+                const roadName = streetName || ref;
+                if (roadName && roadName !== 'unnamed road' && roadName.trim() !== '') {
+                  // Only add "onto" if it's not already in the instruction
+                  if (!instruction.toLowerCase().includes('onto') && !instruction.toLowerCase().includes('on')) {
+                    instruction += ` onto ${roadName}`;
+                  } else {
+                    instruction += ` ${roadName}`;
+                  }
+                }
+                
+                steps.push({
+                  instruction: instruction.trim(),
+                  distance: step.distance || 0,
+                  duration: step.duration || 0,
+                  coordinates: stepCoords,
+                  segmentIndex: legIndex,
+                });
+              });
+            }
+          });
+        }
+
+        const routeResult: RouteResult = {
+          distance,
+          duration,
+          steps,
+          geometry,
+        };
+
+        setRouteInfo(routeResult);
+        setRouteSteps(steps);
+
+        if (onRouteCalculated) {
+          onRouteCalculated(routeResult);
+        }
+        
+        // Hide the directions panel after calculating route
+        if (onHideDirections) {
+          onHideDirections();
+        }
+      } else {
+        throw new Error(data.code || 'Route calculation failed');
+      }
+    } catch (error: any) {
+      console.error('Error calculating route:', error);
+      setApiError('GENERIC_ERROR');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours} hr ${minutes} min`;
+    }
+    return `${minutes} min`;
+  };
+
+  const copyDirectionsToClipboard = useCallback(() => {
+    if (routeSteps.length === 0 || !routeInfo) return;
+    
+    // Build text version of directions
+    let text = '📍 DIRECTIONS\n';
+    text += '═'.repeat(40) + '\n\n';
+    
+    // Add route summary
+    const travelModeEmoji = {
+      driving: '🚗',
+      walking: '🚶',
+      cycling: '🚴',
+      transit: '🚌',
+      plane: '✈️',
+      'container-ship': '🚢',
+      boat: '⛵'
+    }[travelMode] || '🗺️';
+    
+    text += `${travelModeEmoji} Travel Mode: ${travelMode.charAt(0).toUpperCase() + travelMode.slice(1)}\n`;
+    text += `📏 Total Distance: ${routeInfo.distance}\n`;
+    text += `⏱️  Total Duration: ${routeInfo.duration}\n`;
+    text += '\n' + '─'.repeat(40) + '\n\n';
+    
+    // Add turn-by-turn instructions
+    let stepCounter = 0;
+    routeSteps.forEach((step) => {
+      if (step.isSegmentStart) {
+        // Segment header
+        text += '\n' + '─'.repeat(40) + '\n';
+        text += `🗺️  ${step.instruction}\n`;
+        text += '─'.repeat(40) + '\n\n';
+      } else {
+        // Regular step
+        stepCounter++;
+        text += `${stepCounter}. ${step.instruction}\n`;
+        text += `   ${(step.distance / 1000).toFixed(2)} km · ${formatDuration(step.duration)}\n\n`;
+      }
+    });
+    
+    text += '─'.repeat(40) + '\n';
+    text += 'Generated by Maps Assistant\n';
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedDirections(true);
+      setTimeout(() => setCopiedDirections(false), 2000);
+    }).catch(err => {
+      console.error('Failed to copy directions:', err);
+    });
+  }, [routeSteps, routeInfo, travelMode]);
+
+  const handleGoBack = () => {
+    setRouteInfo(null);
+    setRouteSteps([]);
+    
+    // Remove route line from map
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+    
+    // Restore original icons for origin and destination markers
+    if (originMarkerRef.current && originOriginalIconRef.current) {
+      restoreOriginalIcon(originMarkerRef.current, originOriginalIconRef.current);
+      originMarkerRef.current = null;
+      originOriginalIconRef.current = null;
+    }
+    
+    if (destinationMarkerRef.current && destinationOriginalIconRef.current) {
+      restoreOriginalIcon(destinationMarkerRef.current, destinationOriginalIconRef.current);
+      destinationMarkerRef.current = null;
+      destinationOriginalIconRef.current = null;
+    }
+    
+    // Keep origin and destination coordinates, just reset the visual markers
+  };
+
+  const isViewingInstructions = routeInfo !== null;
+
+  return (
+    <DirectionsContainer>
+      <DirectionsHeader>
+        {onClose && (
+          <CloseButton onClick={onClose} title="Close directions">
+            <FiX size={16} />
+          </CloseButton>
+        )}
+        <FiNavigation size={16} />
+        <HeaderTitle>Directions</HeaderTitle>
+        {isViewingInstructions && (
+          <GoBackButton onClick={handleGoBack}>
+            <FiArrowLeft size={14} />
+            New route
+          </GoBackButton>
+        )}
+      </DirectionsHeader>
+
+      <DirectionsContent>
+        {apiError && (
+          <ErrorBox>
+            <ErrorTitle>⚠️ Route Calculation Failed</ErrorTitle>
+            <div>
+              Could not calculate route. Please check your selections.
+              <br />
+              Note: OpenRouteService has rate limits. For production use, get a free API key from{' '}
+              <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea', textDecoration: 'underline' }}>
+                openrouteservice.org
+              </a>
+            </div>
+          </ErrorBox>
+        )}
+        
+        {!isViewingInstructions && (
+          <>
+
+            <SelectPointsButton 
+              onClick={togglePointSelection}
+              $active={isSelectingPoints}
+              disabled={hasCalculatedRoute}
+            >
+              {isSelectingPoints ? (
+                <>
+                  <FiMapPin size={16} />
+                  Stop Selecting (click to finish)
+                </>
+              ) : (
+                <>
+                  <FiMapPin size={16} />
+                  Select Points on Map
+                </>
+              )}
+            </SelectPointsButton>
+
+            {selectedPoints.length > 0 && (
+              <PointsList>
+                {selectedPoints.map((point, index) => {
+                  const isFirst = index === 0;
+                  const isLast = index === selectedPoints.length - 1;
+                  const type = isFirst ? 'origin' : isLast && selectedPoints.length > 1 ? 'destination' : 'waypoint';
+                  
+                  return (
+                    <PointsListItem key={point.id}>
+                      <PointNumber $type={type}>
+                        {isFirst ? 'A' : index}
+                      </PointNumber>
+                      <PointCoords>
+                        {isFirst ? 'Start: ' : isLast && selectedPoints.length > 1 ? 'End: ' : `Via ${index}: `}
+                        {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
+                      </PointCoords>
+                      <ReorderButtons>
+                        <ReorderButton 
+                          onClick={() => reorderPoint(point.id, 'up')}
+                          disabled={isFirst}
+                          title="Move up"
+                        >
+                          <FiArrowUp size={12} />
+                        </ReorderButton>
+                        <ReorderButton 
+                          onClick={() => reorderPoint(point.id, 'down')}
+                          disabled={isLast}
+                          title="Move down"
+                        >
+                          <FiArrowDown size={12} />
+                        </ReorderButton>
+                      </ReorderButtons>
+                      <RemovePointButton onClick={() => removePointFromRoute(point.id)}>
+                        <FiX size={14} />
+                      </RemovePointButton>
+                    </PointsListItem>
+                  );
+                })}
+              </PointsList>
+            )}
+
+            {selectedPoints.length > 0 && (
+              <AddWaypointButton onClick={clearAllPoints}>
+                Clear All Points
+              </AddWaypointButton>
+            )}
+
+            <TransportModesSection>
+              <ModeSectionTitle>Ground Transport</ModeSectionTitle>
+              <TravelModeSelector>
+                <TravelModeButton
+                  $active={travelMode === 'driving'}
+                  onClick={() => setTravelMode('driving')}
+                >
+                  🚗 Driving
+                </TravelModeButton>
+                <TravelModeButton
+                  $active={travelMode === 'walking'}
+                  onClick={() => setTravelMode('walking')}
+                >
+                  🚶 Walking
+                </TravelModeButton>
+                <TravelModeButton
+                  $active={travelMode === 'cycling'}
+                  onClick={() => setTravelMode('cycling')}
+                >
+                  🚴 Cycling
+                </TravelModeButton>
+                <TravelModeButton
+                  $active={travelMode === 'transit'}
+                  onClick={() => setTravelMode('transit')}
+                >
+                  🚌 Transit
+                </TravelModeButton>
+              </TravelModeSelector>
+            </TransportModesSection>
+
+            <TransportModesSection>
+              <ModeSectionTitle>Air & Sea Transport</ModeSectionTitle>
+              <TravelModeSelector>
+                <TravelModeButton
+                  $active={travelMode === 'plane'}
+                  onClick={() => setTravelMode('plane')}
+                >
+                  ✈️ Plane
+                </TravelModeButton>
+                <TravelModeButton
+                  $active={travelMode === 'boat'}
+                  onClick={() => setTravelMode('boat')}
+                >
+                  ⛵ Boat
+                </TravelModeButton>
+                <TravelModeButton
+                  $active={travelMode === 'container-ship'}
+                  onClick={() => setTravelMode('container-ship')}
+                  style={{ gridColumn: 'span 2' }}
+                >
+                  🚢 Container Ship
+                </TravelModeButton>
+              </TravelModeSelector>
+            </TransportModesSection>
+
+            <GetDirectionsButton
+              onClick={calculateRoute}
+              disabled={!origin || !destination || isCalculating}
+            >
+              {isCalculating ? 'Calculating...' : 'Get Directions'}
+            </GetDirectionsButton>
+          </>
+        )}
+
+        {routeInfo && (
+          <>
+            <RouteInfo>
+              <RouteInfoRow>
+                <RouteInfoLabel>Distance:</RouteInfoLabel>
+                <RouteInfoValue>{routeInfo.distance}</RouteInfoValue>
+              </RouteInfoRow>
+              <RouteInfoRow>
+                <RouteInfoLabel>Duration:</RouteInfoLabel>
+                <RouteInfoValue>{routeInfo.duration}</RouteInfoValue>
+              </RouteInfoRow>
+            </RouteInfo>
+
+            {routeSteps.length > 0 && (
+              <StepsContainer>
+                <StepsTitle>
+                  <StepsTitleText>📍 Turn-by-Turn Directions ({routeSteps.length} steps)</StepsTitleText>
+                  <CopyButton 
+                    onClick={copyDirectionsToClipboard}
+                    $copied={copiedDirections}
+                  >
+                    <FiCopy size={12} />
+                    {copiedDirections ? 'Copied!' : 'Copy'}
+                  </CopyButton>
+                </StepsTitle>
+                {routeSteps.map((step, index) => {
+                  // Render segment header
+                  if (step.isSegmentStart) {
+                    return (
+                      <SegmentHeader key={`segment-${index}`}>
+                        🗺️ {step.instruction}
+                      </SegmentHeader>
+                    );
+                  }
+                  
+                  // Calculate step number (excluding segment headers)
+                  const stepNumber = routeSteps.slice(0, index).filter(s => !s.isSegmentStart).length + 1;
+                  
+                  return (
+                    <StepItem key={index}>
+                      <StepNumber>{stepNumber}</StepNumber>
+                      <StepContent>
+                        <StepInstruction>
+                          {step.instruction}
+                        </StepInstruction>
+                        <StepDistance>
+                          {(step.distance / 1000).toFixed(2)} km · {formatDuration(step.duration)}
+                        </StepDistance>
+                      </StepContent>
+                    </StepItem>
+                  );
+                })}
+              </StepsContainer>
+            )}
+          </>
+        )}
+      </DirectionsContent>
+    </DirectionsContainer>
+  );
+};
+
+export default DirectionsPanel;
