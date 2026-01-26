@@ -21,10 +21,13 @@ const MapContainer = styled.div`
   }
 `;
 
+export type MapStyle = 'standard' | 'terrain' | 'satellite';
+
 interface MapComponentProps {
   center?: { lat: number; lng: number };
   zoom?: number;
   onMapLoad?: (map: L.Map) => void;
+  mapStyle?: MapStyle;
 }
 
 const MapComponent = ({
@@ -32,9 +35,35 @@ const MapComponent = ({
   center = { lat: 0, lng: 0 },
   zoom = 2,
   onMapLoad,
+  mapStyle = 'standard',
 }: MapComponentProps) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+
+  // Create tile layer based on map style
+  const createTileLayer = (style: MapStyle): L.TileLayer => {
+    if (style === 'terrain') {
+      // OpenTopoMap for terrain view
+      return L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors, © OpenTopoMap',
+        maxZoom: 17,
+        subdomains: ['a', 'b', 'c'],
+      });
+    } else if (style === 'satellite') {
+      // Esri World Imagery for satellite view
+      return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+        maxZoom: 19,
+      });
+    } else {
+      // Standard OpenStreetMap
+      return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -66,13 +95,10 @@ const MapComponent = ({
 
         console.log('Map created, adding tile layer...');
 
-        // Add tile layer
-        const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors',
-          maxZoom: 19,
-        });
-        
+        // Add initial tile layer
+        const tileLayer = createTileLayer(mapStyle);
         tileLayer.addTo(map);
+        tileLayerRef.current = tileLayer;
 
         mapInstanceRef.current = map;
 
@@ -103,9 +129,25 @@ const MapComponent = ({
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        tileLayerRef.current = null;
       }
     };
-  }, []); // Only run once
+  }, []); // Only run once on mount
+
+  // Update tile layer when mapStyle changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !tileLayerRef.current) return;
+
+    // Remove old tile layer
+    mapInstanceRef.current.removeLayer(tileLayerRef.current);
+
+    // Add new tile layer
+    const newTileLayer = createTileLayer(mapStyle);
+    newTileLayer.addTo(mapInstanceRef.current);
+    tileLayerRef.current = newTileLayer;
+
+    console.log(`Map style changed to: ${mapStyle}`);
+  }, [mapStyle]);
 
   return <MapContainer ref={mapRef} id="leaflet-map-container" />;
 };

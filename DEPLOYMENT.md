@@ -11,24 +11,35 @@ This project is configured for deployment to GitHub Pages with two methods: auto
 
 ### Initial Setup
 
-1. **Enable GitHub Pages in your repository:**
-   - Go to your GitHub repository
-   - Click on **Settings**
-   - In the left sidebar, click **Pages**
-   - Under "Build and deployment":
-     - Source: Select **GitHub Actions**
-
-2. **Push your code to GitHub:**
+1. **Push your code to GitHub:**
    ```bash
    git add .
    git commit -m "Configure for GitHub Pages deployment"
    git push origin main
    ```
 
+2. **Configure GitHub Pages:**
+   - Go to your GitHub repository
+   - Click on **Settings**
+   - In the left sidebar, click **Pages**
+   - Under "Build and deployment":
+     - Source: Select **"Deploy from a branch"**
+     - Branch: Select **"gh-pages"** and **"/ (root)"**
+   - Click **Save**
+
 3. **Monitor the deployment:**
    - Go to the **Actions** tab in your repository
    - You should see a workflow running named "Deploy to GitHub Pages"
-   - Once completed, your site will be live!
+   - Once completed, the `gh-pages` branch will be created/updated
+   - GitHub Pages will automatically deploy from that branch
+
+### How It Works
+
+The GitHub Action workflow:
+1. Triggers on every push to `main` branch
+2. Installs dependencies and builds the project
+3. Deploys the `dist` folder to the `gh-pages` branch
+4. GitHub Pages serves the site from the `gh-pages` branch
 
 ### Accessing Your Site
 
@@ -66,12 +77,14 @@ This will:
 
 ### Configure GitHub Pages for Manual Deployment
 
-If using manual deployment, configure GitHub Pages to use the `gh-pages` branch:
+If using manual deployment, the configuration is the same:
 1. Go to **Settings** > **Pages**
 2. Under "Build and deployment":
    - Source: **Deploy from a branch**
    - Branch: **gh-pages** / **(root)**
 3. Save
+
+**Note:** Both automatic and manual deployment use the same `gh-pages` branch, so the GitHub Pages configuration is identical.
 
 ## Troubleshooting
 
@@ -100,8 +113,15 @@ If CSS or JS files don't load:
 ### GitHub Actions Workflow Fails
 
 1. Check the Actions tab for error details
-2. Ensure you have enabled GitHub Pages with "GitHub Actions" as the source
+2. Ensure you have configured GitHub Pages to deploy from the `gh-pages` branch
 3. Verify the workflow file is at `.github/workflows/deploy.yml`
+4. Make sure the workflow has write permissions (should be automatic with `GITHUB_TOKEN`)
+
+### Environment Protection Rules Error
+
+If you see "Branch 'main' is not allowed to deploy to github-pages due to environment protection rules":
+- This is now fixed! The updated workflow deploys to the `gh-pages` branch instead
+- Make sure GitHub Pages is set to deploy from the `gh-pages` branch (not GitHub Actions)
 
 ## Configuration Files
 

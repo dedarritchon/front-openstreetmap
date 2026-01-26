@@ -48,14 +48,21 @@ This project is configured to automatically deploy to GitHub Pages.
 
 ### Automatic Deployment (Recommended)
 
-1. **Enable GitHub Pages in your repository settings:**
-   - Go to your repository on GitHub
-   - Navigate to Settings > Pages
-   - Under "Build and deployment", select "GitHub Actions" as the source
-
-2. **Push to main branch:**
+1. **Push to main branch:**
    - The GitHub Actions workflow will automatically build and deploy your app
-   - Your site will be available at: `https://<username>.github.io/front-openstreetmap/`
+
+2. **Configure GitHub Pages in your repository settings:**
+   - Go to Settings > Pages
+   - Under "Build and deployment", select "Deploy from a branch"
+   - Select branch: **gh-pages** and folder: **/ (root)**
+
+3. **Your site will be available at:**
+   - `https://<username>.github.io/front-openstreetmap/`
+
+The workflow automatically:
+- Builds the project on every push to `main`
+- Deploys the build to the `gh-pages` branch
+- GitHub Pages serves the site from the `gh-pages` branch
 
 ### Manual Deployment
 

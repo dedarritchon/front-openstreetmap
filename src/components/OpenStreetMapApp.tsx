@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import styled from 'styled-components';
 
-import MapComponent from './MapComponent';
+import MapComponent, { type MapStyle } from './MapComponent';
 import { useFrontContext } from '../hooks/useFrontContext';
 import { detectCoordinates, detectAddresses, geocodeAddress, reverseGeocode } from '../utils/locationDetection';
 import {
@@ -14,6 +14,8 @@ import {
 } from '../utils/pinnedLocationsStorage';
 import LocationsList from './LocationsList';
 import DirectionsPanel from './DirectionsPanel';
+import SavedRoutesList from './SavedRoutesList';
+import { loadSavedRoutes, type SavedRoute } from '../utils/savedRoutesStorage';
 
 const AppContainer = styled.div`
   display: flex;
@@ -57,19 +59,58 @@ const MainContent = styled.div`
   position: relative;
 `;
 
-const ListViewContainer = styled.div`
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  background: #f8f9fa;
-`;
-
 const MapSection = styled.div`
   flex: 1;
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+`;
+
+const SelectionBanner = styled.div<{ $visible: boolean }>`
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  font-weight: 500;
+  display: ${props => props.$visible ? 'flex' : 'none'};
+  align-items: center;
+  gap: 8px;
+  animation: ${props => props.$visible ? 'slideDown 0.3s ease-out' : 'none'};
+  pointer-events: none;
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+`;
+
+const SelectionBannerIcon = styled.div`
+  width: 20px;
+  height: 20px;
+  border: 2px solid white;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 `;
 
 const EmptyStateMessage = styled.div`
@@ -184,6 +225,38 @@ const OpenStreetMapApp = () => {
   const markersMapRef = useRef<Map<string, L.Marker>>(new Map());
   const [showListView, setShowListView] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
+  const [isSelectingPoints, setIsSelectingPoints] = useState(false);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
+  const [visibleRouteIds, setVisibleRouteIds] = useState<Set<string>>(new Set());
+  const [showSavedRoutesList, setShowSavedRoutesList] = useState(false);
+  const [selectedSavedRoute, setSelectedSavedRoute] = useState<SavedRoute | null>(null);
+  const [mapStyle, setMapStyle] = useState<MapStyle>('standard');
+
+  // Helper functions to ensure only one panel is open at a time
+  const openListView = useCallback((open: boolean) => {
+    setShowListView(open);
+    if (open) {
+      setShowDirections(false);
+      setShowSavedRoutesList(false);
+    }
+  }, []);
+
+  const openDirections = useCallback((open: boolean) => {
+    setShowDirections(open);
+    if (open) {
+      setShowListView(false);
+      setShowSavedRoutesList(false);
+    }
+  }, []);
+
+  const openSavedRoutesList = useCallback((open: boolean) => {
+    setShowSavedRoutesList(open);
+    if (open) {
+      setShowListView(false);
+      setShowDirections(false);
+    }
+  }, []);
+  const savedRoutePolylinesRef = useRef<Map<string, L.Polyline>>(new Map());
   const showListViewRef = useRef(showListView);
   const showDirectionsRef = useRef(showDirections);
   
@@ -193,11 +266,120 @@ const OpenStreetMapApp = () => {
     showDirectionsRef.current = showDirections;
   }, [showListView, showDirections]);
   
+  // Listen for selection mode changes from DirectionsPanel
+  useEffect(() => {
+    const handleSelectionModeChange = (event: CustomEvent) => {
+      setIsSelectingPoints(event.detail);
+    };
+    
+    window.addEventListener('selectionModeChanged', handleSelectionModeChange as EventListener);
+    
+    return () => {
+      window.removeEventListener('selectionModeChanged', handleSelectionModeChange as EventListener);
+    };
+  }, []);
+
+  // Load saved routes on mount and listen for updates
+  useEffect(() => {
+    const loadRoutes = () => {
+      const routes = loadSavedRoutes();
+      setSavedRoutes(routes);
+      // Show all routes by default
+      setVisibleRouteIds(new Set(routes.map(r => r.id)));
+    };
+    
+    loadRoutes();
+    
+    const handleRoutesUpdate = () => {
+      loadRoutes();
+    };
+    
+    window.addEventListener('savedRoutesUpdated', handleRoutesUpdate);
+    
+    return () => {
+      window.removeEventListener('savedRoutesUpdated', handleRoutesUpdate);
+    };
+  }, []);
+
+  // Render saved routes on map
+  useEffect(() => {
+    if (!map) return;
+
+    // Remove all existing saved route polylines
+    savedRoutePolylinesRef.current.forEach((polyline) => {
+      polyline.remove();
+    });
+    savedRoutePolylinesRef.current.clear();
+
+    // Render visible saved routes
+    savedRoutes.forEach((route) => {
+      if (!visibleRouteIds.has(route.id)) return;
+
+      try {
+        const polyline = L.polyline(route.geometry as L.LatLngExpression[], {
+          color: route.color,
+          weight: 4,
+          opacity: 0.7,
+          interactive: true,
+          dashArray: route.travelMode === 'plane' ? '10, 10' : undefined,
+        }).addTo(map);
+
+        // Add popup with route info
+        const popupContent = `
+          <div style="padding: 8px; min-width: 200px;">
+            <strong>📍 ${route.name}</strong><br/>
+            <small style="color: #666;">${route.travelMode.charAt(0).toUpperCase() + route.travelMode.slice(1)}</small><br/>
+            <small style="color: #666;">${route.routeInfo.distance} • ${route.routeInfo.duration}</small>
+          </div>
+        `;
+        polyline.bindPopup(popupContent);
+
+        savedRoutePolylinesRef.current.set(route.id, polyline);
+      } catch (error) {
+        console.error(`Error rendering saved route ${route.id}:`, error);
+      }
+    });
+
+    // Cleanup
+    return () => {
+      savedRoutePolylinesRef.current.forEach((polyline) => {
+        polyline.remove();
+      });
+      savedRoutePolylinesRef.current.clear();
+    };
+  }, [map, savedRoutes, visibleRouteIds]);
+
+  // Handle route visibility toggle
+  const handleRouteToggle = useCallback((routeId: string, visible: boolean) => {
+    setVisibleRouteIds(prev => {
+      const newSet = new Set(prev);
+      if (visible) {
+        newSet.add(routeId);
+      } else {
+        newSet.delete(routeId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Listen for clear saved route selection event
+  useEffect(() => {
+    const handleClearSelection = () => {
+      setSelectedSavedRoute(null);
+    };
+    
+    window.addEventListener('clearSavedRouteSelection', handleClearSelection);
+    
+    return () => {
+      window.removeEventListener('clearSavedRouteSelection', handleClearSelection);
+    };
+  }, []);
+  
   // Listen for event to show directions panel
   useEffect(() => {
     const handleShowDirections = () => {
       console.log('Event received to show directions panel');
-      setShowDirections(true);
+      openDirections(true);
     };
     
     window.addEventListener('showDirectionsPanel', handleShowDirections);
@@ -205,7 +387,7 @@ const OpenStreetMapApp = () => {
     return () => {
       window.removeEventListener('showDirectionsPanel', handleShowDirections);
     };
-  }, []);
+  }, [openDirections]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -856,9 +1038,9 @@ const OpenStreetMapApp = () => {
                 window.dispatchEvent(event);
                 // Show directions panel and switch to map view if needed
                 if (showListViewRef.current) {
-                  setShowListView(false);
+                  openListView(false);
                 }
-                setShowDirections(true);
+                openDirections(true);
                 // Close popup
                 marker.closePopup();
               };
@@ -979,7 +1161,7 @@ const OpenStreetMapApp = () => {
     
     // If in list view, switch to map view first
     if (showListView) {
-      setShowListView(false);
+      openListView(false);
       // Wait for map to be ready and markers to be created
       setTimeout(() => {
         findAndOpenMarker();
@@ -993,6 +1175,18 @@ const OpenStreetMapApp = () => {
   return (
     <AppContainer>
       <Header>
+        <LocationCountButton 
+            onClick={() => {
+              setMapStyle(prev => {
+                if (prev === 'standard') return 'satellite';
+                if (prev === 'satellite') return 'terrain';
+                return 'standard';
+              });
+            }}
+            title="Toggle map view (Standard → Terrain → Satellite)"
+          >
+            {mapStyle === 'terrain' ? '🗻' : mapStyle === 'satellite' ? '🛰️' : '🗺️'}
+          </LocationCountButton>
         <SearchContainer ref={searchContainerRef}>
           <SearchInput
             type="text"
@@ -1024,13 +1218,23 @@ const OpenStreetMapApp = () => {
         </SearchContainer>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <LocationCountButton 
-            onClick={() => setShowDirections(!showDirections)}
+            onClick={() => openDirections(!showDirections)}
             style={{ 
               background: showDirections ? '#667eea' : 'none',
               color: showDirections ? 'white' : '#666'
             }}
           >
             🧭 Directions
+          </LocationCountButton>
+          <LocationCountButton 
+            onClick={() => openSavedRoutesList(!showSavedRoutesList)}
+            style={{ 
+              background: showSavedRoutesList ? '#667eea' : 'none',
+              color: showSavedRoutesList ? 'white' : '#666'
+            }}
+            title={`Saved Routes (${savedRoutes.length})`}
+          >
+            🗺️ Routes ({savedRoutes.length})
           </LocationCountButton>
           {isLoadingLocations ? (
             <LocationCountButton 
@@ -1041,9 +1245,9 @@ const OpenStreetMapApp = () => {
             </LocationCountButton>
           ) : coordinates.length > 0 || pinnedLocations.length > 0 ? (
             <LocationCountButton 
-              onClick={() => setShowListView(!showListView)}
+              onClick={() => openListView(!showListView)}
             >
-              {coordinates.length} current, {pinnedLocations.length} pinned
+              Points ({coordinates.length + pinnedLocations.length})
             </LocationCountButton>
           ) : (
             <EmptyStateMessage>
@@ -1054,66 +1258,11 @@ const OpenStreetMapApp = () => {
       </Header>
 
       <MainContent>
-        {showListView ? (
-          <ListViewContainer>
-            <div style={{ marginBottom: '16px', display: showDirections ? 'block' : 'none' }}>
-              <DirectionsPanel 
-                map={map} 
-                markersMap={markersMapRef.current}
-                onShowDirections={() => {
-                  setShowDirections(true);
-                }}
-                onHideDirections={() => {
-                  setShowDirections(false);
-                }}
-                onClose={() => {
-                  setShowDirections(false);
-                }}
-              />
-            </div>
-            <LocationsList
-              conversationLocations={coordinates
-                .filter(c => !pinnedLocations.some(p => p.id === c.id))
-                .map(c => ({
-                  id: c.id,
-                  text: c.text,
-                  type: 'coordinates' as const,
-                  coordinates: { lat: c.lat, lng: c.lng },
-                  formattedAddress: c.address,
-                }))}
-              savedLocations={pinnedLocations.map(p => ({
-                id: p.id,
-                text: p.text,
-                type: 'coordinates' as const,
-                coordinates: { lat: p.lat, lng: p.lng },
-                formattedAddress: p.address,
-              }))}
-              onLocationClick={(location) => {
-                if (location.coordinates) {
-                  handleLocationClick({
-                    lat: location.coordinates.lat,
-                    lng: location.coordinates.lng,
-                    id: location.id,
-                    text: location.text,
-                    address: location.formattedAddress,
-                  });
-                }
-              }}
-              onLocationRemove={(id, fromSaved) => {
-                if (fromSaved) {
-                  handleUnpinLocation(id);
-                }
-              }}
-              onSaveLocation={(id) => {
-                const location = coordinates.find(c => c.id === id);
-                if (location) {
-                  handlePinLocation(location);
-                }
-              }}
-            />
-          </ListViewContainer>
-        ) : (
-          <MapSection>
+        <MapSection>
+            <SelectionBanner $visible={isSelectingPoints && !showListView && !showDirections}>
+              <SelectionBannerIcon />
+              <span>Click on the map or a marker to select a point...</span>
+            </SelectionBanner>
             <div style={{ 
               position: 'absolute', 
               top: '16px', 
@@ -1128,20 +1277,96 @@ const OpenStreetMapApp = () => {
                 markersMap={markersMapRef.current}
                 onShowDirections={() => {
                   console.log('Opening directions panel from route popup');
-                  setShowDirections(true);
+                  openDirections(true);
                 }}
                 onHideDirections={() => {
-                  setShowDirections(false);
+                  openDirections(false);
                 }}
                 onClose={() => {
-                  setShowDirections(false);
+                  openDirections(false);
+                  setSelectedSavedRoute(null);
                 }}
+                savedRouteToLoad={selectedSavedRoute}
               />
             </div>
-            <MapComponent onMapLoad={setMap} />
+            <MapComponent onMapLoad={setMap} mapStyle={mapStyle} />
           </MapSection>
-        )}
       </MainContent>
+
+      {showListView && (
+        <div style={{
+          position: 'absolute',
+          top: '80px',
+          right: '16px',
+          zIndex: 2000,
+          maxWidth: '400px',
+          width: '100%',
+        }}>
+          <LocationsList
+            conversationLocations={coordinates
+              .filter(c => !pinnedLocations.some(p => p.id === c.id))
+              .map(c => ({
+                id: c.id,
+                text: c.text,
+                type: 'coordinates' as const,
+                coordinates: { lat: c.lat, lng: c.lng },
+                formattedAddress: c.address,
+              }))}
+            savedLocations={pinnedLocations.map(p => ({
+              id: p.id,
+              text: p.text,
+              type: 'coordinates' as const,
+              coordinates: { lat: p.lat, lng: p.lng },
+              formattedAddress: p.address,
+            }))}
+            onLocationClick={(location) => {
+              if (location.coordinates) {
+                handleLocationClick({
+                  lat: location.coordinates.lat,
+                  lng: location.coordinates.lng,
+                  id: location.id,
+                  text: location.text,
+                  address: location.formattedAddress,
+                });
+              }
+            }}
+            onLocationRemove={(id, fromSaved) => {
+              if (fromSaved) {
+                handleUnpinLocation(id);
+              }
+            }}
+            onSaveLocation={(id) => {
+              const location = coordinates.find(c => c.id === id);
+              if (location) {
+                handlePinLocation(location);
+              }
+            }}
+            onClose={() => openListView(false)}
+          />
+        </div>
+      )}
+
+      {showSavedRoutesList && (
+        <div style={{
+          position: 'absolute',
+          top: '80px',
+          right: '16px',
+          zIndex: 2000,
+          maxWidth: '400px',
+          width: '100%',
+        }}>
+          <SavedRoutesList
+            onClose={() => openSavedRoutesList(false)}
+            onRouteToggle={handleRouteToggle}
+            visibleRouteIds={visibleRouteIds}
+            onRouteSelect={(route) => {
+              setSelectedSavedRoute(route);
+              openSavedRoutesList(false);
+              openDirections(true);
+            }}
+          />
+        </div>
+      )}
     </AppContainer>
   );
 };

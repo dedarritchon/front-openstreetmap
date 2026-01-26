@@ -1,14 +1,32 @@
-import { FiMapPin, FiTrash2, FiNavigation } from 'react-icons/fi';
+import { FiMapPin, FiTrash2, FiX } from 'react-icons/fi';
 import styled from 'styled-components';
 
 import type { DetectedLocation } from '../types/locations';
 
-const LocationsContainer = styled.div`
+const LocationsListWrapper = styled.div`
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   overflow: hidden;
-  margin-top: 12px;
+  max-width: 400px;
+  width: 100%;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+`;
+
+const LocationsContainer = styled.div`
+  background: white;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+`;
+
+const LocationsScrollContent = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
 `;
 
 const LocationsHeader = styled.div`
@@ -30,17 +48,25 @@ const HeaderTitle = styled.div`
   flex: 1;
 `;
 
-const LocationCount = styled.span`
-  background: rgba(255, 255, 255, 0.3);
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
+const CloseButton = styled.button`
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
 `;
 
 const LocationsContent = styled.div`
   padding: 8px;
-  max-height: 600px;
-  overflow-y: auto;
 `;
 
 const LocationItem = styled.div`
@@ -164,42 +190,6 @@ const DeleteButton = styled.button`
   }
 `;
 
-const DirectionsButtons = styled.div`
-  display: flex;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
-  margin-top: 4px;
-`;
-
-const DirectionButton = styled.button`
-  flex: 1;
-  padding: 6px 8px;
-  border: 1px solid #667eea;
-  background: white;
-  color: #667eea;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #667eea;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  &:active {
-    transform: translateY(0);
-  }
-`;
-
 
 const EmptyState = styled.div`
   padding: 32px 16px;
@@ -224,6 +214,7 @@ interface LocationsListProps {
   onLocationClick: (location: DetectedLocation) => void;
   onLocationRemove: (locationId: string, fromSaved?: boolean) => void;
   onSaveLocation?: (locationId: string) => void;
+  onClose?: () => void;
 }
 
 const LocationsList = ({
@@ -232,6 +223,7 @@ const LocationsList = ({
   onLocationClick,
   onLocationRemove,
   onSaveLocation,
+  onClose,
 }: LocationsListProps) => {
   const getTypeLabel = (type: string) => {
     switch (type) {
@@ -243,24 +235,6 @@ const LocationsList = ({
         return 'Address';
       default:
         return type;
-    }
-  };
-
-  const handleSetOrigin = (location: DetectedLocation) => {
-    if (location.coordinates) {
-      const event = new CustomEvent('setDirectionsOrigin', {
-        detail: { lat: location.coordinates.lat, lng: location.coordinates.lng }
-      });
-      window.dispatchEvent(event);
-    }
-  };
-
-  const handleSetDestination = (location: DetectedLocation) => {
-    if (location.coordinates) {
-      const event = new CustomEvent('setDirectionsDestination', {
-        detail: { lat: location.coordinates.lat, lng: location.coordinates.lng }
-      });
-      window.dispatchEvent(event);
     }
   };
 
@@ -321,111 +295,64 @@ const LocationsList = ({
             </PinButton>
           ) : null}
         </LocationMainRow>
-        
-        {location.coordinates && (
-          <DirectionsButtons>
-            <DirectionButton
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSetOrigin(location);
-              }}
-              title="Set as origin"
-              style={{ borderColor: '#34A853', color: '#34A853' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#34A853';
-                e.currentTarget.style.color = 'white';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'white';
-                e.currentTarget.style.color = '#34A853';
-              }}
-            >
-              <FiNavigation size={12} />
-              Origin
-            </DirectionButton>
-            <DirectionButton
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSetDestination(location);
-              }}
-              title="Set as destination"
-              style={{ borderColor: '#EA4335', color: '#EA4335' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#EA4335';
-                e.currentTarget.style.color = 'white';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'white';
-                e.currentTarget.style.color = '#EA4335';
-              }}
-            >
-              <FiNavigation size={12} />
-              Destination
-            </DirectionButton>
-          </DirectionsButtons>
-        )}
       </LocationItem>
     );
   };
 
   return (
-    <>
-      {/* Current Conversation Locations */}
+    <LocationsListWrapper>
       <LocationsContainer>
         <LocationsHeader>
           <HeaderTitle>
             <FiMapPin size={16} />
-            Current Conversation Locations
+            Locations ({conversationLocations.length + savedLocations.length})
           </HeaderTitle>
-          {conversationLocations.length > 0 && (
-            <LocationCount>{conversationLocations.length}</LocationCount>
+          {onClose && (
+            <CloseButton onClick={onClose} title="Close">
+              <FiX size={16} />
+            </CloseButton>
           )}
         </LocationsHeader>
 
-        <LocationsContent>
-          {conversationLocations.length === 0 ? (
+        <LocationsScrollContent>
+          {/* Current Conversation Locations */}
+          {conversationLocations.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#666', marginBottom: '8px', padding: '0 4px' }}>
+                Current Conversation ({conversationLocations.length})
+              </div>
+              <LocationsContent>
+                {conversationLocations.map((location) => renderLocationItem(location, false))}
+              </LocationsContent>
+            </div>
+          )}
+
+          {/* My Locations (Saved) */}
+          {savedLocations.length > 0 && (
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#666', marginBottom: '8px', padding: '0 4px' }}>
+                My Locations ({savedLocations.length})
+              </div>
+              <LocationsContent>
+                {savedLocations.map((location) => renderLocationItem(location, true))}
+              </LocationsContent>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {conversationLocations.length === 0 && savedLocations.length === 0 && (
             <EmptyState>
               <EmptyIcon>📍</EmptyIcon>
               <EmptyText>
-                No locations detected in this conversation.
+                No locations found.
                 <br />
                 Share maps links, addresses, or coordinates!
               </EmptyText>
             </EmptyState>
-          ) : (
-            conversationLocations.map((location) => renderLocationItem(location, false))
           )}
-        </LocationsContent>
+        </LocationsScrollContent>
       </LocationsContainer>
-
-      {/* My Locations (Saved) */}
-      <LocationsContainer style={{ marginTop: '16px' }}>
-        <LocationsHeader>
-          <HeaderTitle>
-            <FiMapPin size={16} />
-            My Locations
-          </HeaderTitle>
-          {savedLocations.length > 0 && (
-            <LocationCount>{savedLocations.length}</LocationCount>
-          )}
-        </LocationsHeader>
-
-        <LocationsContent>
-          {savedLocations.length === 0 ? (
-            <EmptyState>
-              <EmptyIcon>💾</EmptyIcon>
-              <EmptyText>
-                No saved locations yet.
-                <br />
-                Save locations from conversations to keep them!
-              </EmptyText>
-            </EmptyState>
-          ) : (
-            savedLocations.map((location) => renderLocationItem(location, true))
-          )}
-        </LocationsContent>
-      </LocationsContainer>
-    </>
+    </LocationsListWrapper>
   );
 };
 
