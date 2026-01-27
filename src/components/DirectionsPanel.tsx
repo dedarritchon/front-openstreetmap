@@ -1,12 +1,14 @@
 import L from 'leaflet';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FiArrowLeft, FiArrowUp, FiArrowDown, FiCopy, FiMapPin, FiNavigation, FiX, FiSettings, FiSave } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowUp, FiArrowDown, FiMapPin, FiNavigation, FiX, FiSettings } from 'react-icons/fi';
 import styled from 'styled-components';
 
 import type { RouteResult, TravelMode } from '../types/maps';
 import { calculateAirRouteWaypoints, calculateMaritimeRoute } from '../utils/maritimeRouting';
-import { loadSpeedSettings, type SpeedSettings } from '../utils/speedSettings';
+import { loadSpeedSettings, loadCostSettings, type SpeedSettings, type CostSettings } from '../utils/speedSettings';
 import { addSavedRoute, loadSavedRoutes, type SavedRoute } from '../utils/savedRoutesStorage';
+import { addPinnedLocation, isLocationPinned } from '../utils/pinnedLocationsStorage';
+import { reverseGeocode } from '../utils/locationDetection';
 import SpeedSettingsPanel from './SpeedSettingsPanel';
 
 const DirectionsContainer = styled.div`
@@ -115,33 +117,6 @@ const TravelModeButton = styled.button<{ $active: boolean }>`
   }
 `;
 
-const SaveRouteButton = styled.button`
-  width: 100%;
-  padding: 10px 16px;
-  background: #34A853;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.2s;
-  margin-top: 8px;
-
-  &:hover {
-    background: #2d8f47;
-  }
-
-  &:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-  }
-`;
-
 const GetDirectionsButton = styled.button`
   width: 100%;
   padding: 10px;
@@ -167,152 +142,6 @@ const GetDirectionsButton = styled.button`
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
-  }
-`;
-
-const RouteInfo = styled.div`
-  margin-top: 12px;
-  padding: 10px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  border-left: 4px solid #667eea;
-`;
-
-const RouteInfoRow = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-`;
-
-const RouteInfoLabel = styled.span`
-  font-size: 11px;
-  color: #666;
-  font-weight: 500;
-`;
-
-const RouteInfoValue = styled.span`
-  font-size: 12px;
-  color: #333;
-  font-weight: 600;
-`;
-
-const StepsContainer = styled.div`
-  margin-top: 12px;
-  max-height: 600px;
-  overflow-y: auto;
-`;
-
-const StepsTitle = styled.div`
-  font-size: 12px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
-  padding: 8px;
-  background: #f8f9fa;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-`;
-
-const StepsTitleText = styled.span`
-  flex: 1;
-`;
-
-const CopyButton = styled.button<{ $copied?: boolean }>`
-  background: ${props => props.$copied ? '#34A853' : '#667eea'};
-  color: white;
-  border: none;
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s;
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-  }
-
-  &:active {
-    transform: translateY(0);
-  }
-`;
-
-const StepItem = styled.div`
-  display: flex;
-  gap: 10px;
-  padding: 10px;
-  border-left: 2px solid #e9ecef;
-  margin-bottom: 8px;
-  position: relative;
-
-  &:last-child {
-    border-left: 2px dashed #e9ecef;
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: -6px;
-    top: 12px;
-    width: 10px;
-    height: 10px;
-    background: #667eea;
-    border-radius: 50%;
-    border: 2px solid white;
-    box-shadow: 0 0 0 2px #667eea;
-  }
-`;
-
-const StepNumber = styled.div`
-  font-size: 10px;
-  font-weight: 600;
-  color: #667eea;
-  min-width: 20px;
-`;
-
-const StepContent = styled.div`
-  flex: 1;
-`;
-
-const StepInstruction = styled.div`
-  font-size: 12px;
-  color: #333;
-  line-height: 1.4;
-  margin-bottom: 4px;
-`;
-
-const StepDistance = styled.div`
-  font-size: 10px;
-  color: #666;
-`;
-
-const SegmentHeader = styled.div`
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-  
-  &:first-child {
-    margin-top: 0;
   }
 `;
 
@@ -498,36 +327,37 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
   const [selectedPoints, setSelectedPoints] = useState<Array<{ lat: number; lng: number; id: string }>>([]);
   const [hasCalculatedRoute, setHasCalculatedRoute] = useState(false);
   const [travelMode, setTravelMode] = useState<TravelMode>('driving');
-  const [routeInfo, setRouteInfo] = useState<RouteResult | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [routeSteps, setRouteSteps] = useState<RouteResult['steps']>([]);
-  const [copiedDirections, setCopiedDirections] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [speedSettings, setSpeedSettings] = useState<SpeedSettings>(loadSpeedSettings());
-  const [currentRouteGeometry, setCurrentRouteGeometry] = useState<[number, number][] | null>(null);
-  const [currentRouteColor, setCurrentRouteColor] = useState<string>('#667eea');
+  const [costSettings, setCostSettings] = useState<CostSettings>(loadCostSettings());
   
-  const originMarkerRef = useRef<L.Marker | null>(null);
-  const destinationMarkerRef = useRef<L.Marker | null>(null);
   const selectedPointMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const selectedPointOriginalIconsRef = useRef<Map<string, L.Icon | L.DivIcon>>(new Map());
-  const originOriginalIconRef = useRef<L.Icon | L.DivIcon | null>(null);
-  const destinationOriginalIconRef = useRef<L.Icon | L.DivIcon | null>(null);
   const routeLineRef = useRef<L.Polyline | null>(null);
   const clickListenerRef = useRef<L.LeafletEventHandlerFnMap | null>(null);
 
   // Load speed settings and listen for changes
   useEffect(() => {
     setSpeedSettings(loadSpeedSettings());
+    setCostSettings(loadCostSettings());
     
+    const handleTransportSettingsChange = (event: CustomEvent) => {
+      setSpeedSettings(event.detail.speeds);
+      setCostSettings(event.detail.costs);
+    };
+    
+    // Legacy support for old event name
     const handleSpeedSettingsChange = (event: CustomEvent) => {
       setSpeedSettings(event.detail);
     };
     
+    window.addEventListener('transportSettingsChanged', handleTransportSettingsChange as EventListener);
     window.addEventListener('speedSettingsChanged', handleSpeedSettingsChange as EventListener);
     
     return () => {
+      window.removeEventListener('transportSettingsChanged', handleTransportSettingsChange as EventListener);
       window.removeEventListener('speedSettingsChanged', handleSpeedSettingsChange as EventListener);
     };
   }, []);
@@ -547,10 +377,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     setDestination(savedRouteToLoad.destination);
     setWaypoints(savedRouteToLoad.waypoints);
     setTravelMode(savedRouteToLoad.travelMode);
-    setRouteInfo(savedRouteToLoad.routeInfo);
-    setRouteSteps(savedRouteToLoad.routeInfo.steps);
-    setCurrentRouteGeometry(savedRouteToLoad.geometry);
-    setCurrentRouteColor(savedRouteToLoad.color);
     setHasCalculatedRoute(true);
 
     // Draw the route on the map
@@ -573,6 +399,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         <strong>📍 ${savedRouteToLoad.name}</strong><br/>
         <small style="color: #666;">${savedRouteToLoad.travelMode.charAt(0).toUpperCase() + savedRouteToLoad.travelMode.slice(1)}</small><br/>
         <small style="color: #666;">${savedRouteToLoad.routeInfo.distance} • ${savedRouteToLoad.routeInfo.duration}</small>
+        ${savedRouteToLoad.routeInfo.cost ? `<br/><small style="color: #666;">Cost: ${savedRouteToLoad.routeInfo.cost}</small>` : ''}
       </div>
     `;
     polyline.bindPopup(routePopupContent);
@@ -598,6 +425,25 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
   const getSpeedForMode = useCallback((mode: TravelMode): number => {
     return speedSettings[mode] || speedSettings.driving;
   }, [speedSettings]);
+
+  // Helper function to get cost per km for current travel mode
+  const getCostPerKm = useCallback((mode: TravelMode): number => {
+    return costSettings[mode] || costSettings.driving;
+  }, [costSettings]);
+
+  // Helper function to calculate trip cost
+  const calculateTripCost = useCallback((distanceKm: number, mode: TravelMode): string => {
+    const costPerKm = getCostPerKm(mode);
+    const totalCost = distanceKm * costPerKm;
+    
+    if (totalCost === 0) {
+      return 'Free';
+    } else if (totalCost < 1) {
+      return `$${totalCost.toFixed(2)}`;
+    } else {
+      return `$${totalCost.toFixed(2)}`;
+    }
+  }, [getCostPerKm]);
 
   // Helper function to generate automatic route name
   const generateRouteName = useCallback((
@@ -660,7 +506,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
   }, []);
 
   // Auto-save route after it's calculated and displayed
-  const autoSaveRoute = useCallback((
+  const autoSaveRoute = useCallback(async (
     routeResult: RouteResult,
     geometry: [number, number][],
     routeColor: string
@@ -677,6 +523,37 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     const routeName = generateRouteName(travelMode, origin, destination, waypoints.length);
     
     try {
+      // Save route points to pinned locations
+      const savePointToPinned = async (point: { lat: number; lng: number; id?: string }, label: string) => {
+        try {
+          // Try to get address via reverse geocoding
+          const address = await reverseGeocode(point.lat, point.lng);
+          const pointId = point.id || `route-point-${point.lat}-${point.lng}-${Date.now()}`;
+          
+          addPinnedLocation({
+            id: pointId,
+            lat: point.lat,
+            lng: point.lng,
+            text: label,
+            address: address || `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`,
+          });
+        } catch (error) {
+          console.error(`Error saving ${label} to pinned locations:`, error);
+        }
+      };
+      
+      // Save origin
+      await savePointToPinned(origin, `Route Origin: ${routeName}`);
+      
+      // Save destination
+      await savePointToPinned(destination, `Route Destination: ${routeName}`);
+      
+      // Save waypoints
+      for (const waypoint of waypoints) {
+        await savePointToPinned(waypoint, `Route Waypoint: ${routeName}`);
+      }
+      
+      // Save the route
       addSavedRoute({
         name: routeName,
         origin: {
@@ -700,6 +577,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
       
       // Notify other components
       window.dispatchEvent(new CustomEvent('savedRoutesUpdated'));
+      window.dispatchEvent(new CustomEvent('pinnedLocationsUpdated'));
       
       console.log('Route auto-saved successfully:', routeName);
     } catch (error) {
@@ -736,12 +614,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     return marker || null;
   }, [markersMap]);
 
-  // Helper function to restore original icon
-  const restoreOriginalIcon = useCallback((marker: L.Marker, originalIcon: L.Icon | L.DivIcon | null) => {
-    if (originalIcon) {
-      marker.setIcon(originalIcon);
-    }
-  }, []);
 
   // Add a point to the route sequence
   const addPointToRoute = useCallback((lat: number, lng: number, id?: string) => {
@@ -886,8 +758,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     }, 10);
     
     // Clear route
-    setRouteInfo(null);
-    setRouteSteps([]);
     if (routeLineRef.current) {
       routeLineRef.current.remove();
       routeLineRef.current = null;
@@ -956,8 +826,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     }, 10);
     
     // Clear route since order changed
-    setRouteInfo(null);
-    setRouteSteps([]);
     if (routeLineRef.current) {
       routeLineRef.current.remove();
       routeLineRef.current = null;
@@ -991,14 +859,29 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
   // Clear all points
   const clearAllPoints = useCallback(() => {
     // Restore original icons or remove markers
+    // But don't remove markers that are now pinned locations
     selectedPointMarkersRef.current.forEach((marker, pointId) => {
       const originalIcon = selectedPointOriginalIconsRef.current.get(pointId);
+      const point = selectedPoints.find(p => p.id === pointId);
       
-      if (originalIcon) {
+      // Check if this location is now pinned
+      const isPinned = point ? isLocationPinned(point.id || '', point.lat, point.lng) : false;
+      
+      if (isPinned) {
+        // Location is pinned - restore original icon if it was an existing marker
+        // Otherwise, just remove it from our tracking (it will be managed by useMarkers)
+        if (originalIcon) {
+          marker.setIcon(originalIcon);
+        } else {
+          // This was a new marker we created, but it's now pinned
+          // Remove it and let useMarkers recreate it as a pinned location
+          marker.remove();
+        }
+      } else if (originalIcon) {
         // This was an existing marker - restore its original icon
         marker.setIcon(originalIcon);
       } else {
-        // This was a new marker we created - remove it
+        // This was a new marker we created and it's not pinned - remove it
         marker.remove();
       }
     });
@@ -1020,8 +903,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     window.dispatchEvent(event);
     
     // Clear route
-    setRouteInfo(null);
-    setRouteSteps([]);
     if (routeLineRef.current) {
       routeLineRef.current.remove();
       routeLineRef.current = null;
@@ -1029,7 +910,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
 
     // Clear saved route selection
     window.dispatchEvent(new CustomEvent('clearSavedRouteSelection'));
-  }, []);
+  }, [selectedPoints]);
 
   // Handle map clicks to select points sequentially
   useEffect(() => {
@@ -1175,9 +1056,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
     if (!map || !origin || !destination) return;
 
     setIsCalculating(true);
-    setRouteInfo(null);
     setApiError(null);
-    setRouteSteps([]);
     
     // Stop point selection and mark route as calculated
     setIsSelectingPoints(false);
@@ -1274,10 +1153,11 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         const durationHours = totalDistanceKm / speedKmh;
         const durationSeconds = durationHours * 3600;
         
+        // Calculate trip cost
+        const tripCost = calculateTripCost(totalDistanceKm, travelMode);
+        
         // Convert waypoints to geometry format [lat, lng]
         const geometry: [number, number][] = routeWaypoints.map(wp => [wp.lat, wp.lng]);
-        setCurrentRouteGeometry(geometry);
-        setCurrentRouteColor(routeColor);
         
         // Draw the route on the map
         const polyline = L.polyline(geometry as L.LatLngExpression[], {
@@ -1351,6 +1231,9 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
             <div style="margin-bottom: 4px;">
               <strong>Duration:</strong> ${duration}
             </div>
+            <div style="margin-bottom: 4px;">
+              <strong>Cost:</strong> ${tripCost}
+            </div>
             <div style="margin-bottom: 8px; font-size: 10px; color: #666;">
               Average speed: ${speedKmh} km/h
             </div>
@@ -1412,6 +1295,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         const routeResult: RouteResult = {
           distance,
           duration,
+          cost: tripCost,
           steps,
           geometry,
         };
@@ -1486,9 +1370,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         };
         
         polyline.on('popupopen', handlePopupOpen);
-        
-        setRouteInfo(routeResult);
-        setRouteSteps(steps);
 
         // Auto-save the route after it's calculated and displayed
         autoSaveRoute(routeResult, geometry, routeColor);
@@ -1500,6 +1381,9 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         if (onHideDirections) {
           onHideDirections();
         }
+        
+        // Show routes modal to display the route preview
+        window.dispatchEvent(new CustomEvent('showSavedRoutesList'));
         
         setIsCalculating(false);
         return;
@@ -1543,8 +1427,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
       if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
         const route = data.routes[0];
         const geometry = route.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]] as [number, number]);
-        setCurrentRouteGeometry(geometry);
-        setCurrentRouteColor('#667eea');
         
         // Draw the route on the map
         const polyline = L.polyline(geometry as L.LatLngExpression[], {
@@ -1584,6 +1466,9 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
           ? `${distanceKm.toFixed(2)} km`
           : `${(distanceKm * 1000).toFixed(0)} m`;
         const duration = formatDuration(durationSeconds);
+        
+        // Calculate trip cost
+        const tripCost = calculateTripCost(distanceKm, travelMode);
         
         // Build segment breakdown if there are waypoints
         let segmentInfo = '';
@@ -1644,8 +1529,11 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
             <div style="margin-bottom: 4px;">
               <strong>Total Distance:</strong> ${distance}
             </div>
-            <div style="margin-bottom: 8px;">
+            <div style="margin-bottom: 4px;">
               <strong>Total Duration:</strong> ${duration}
+            </div>
+            <div style="margin-bottom: 8px;">
+              <strong>Total Cost:</strong> ${tripCost}
             </div>
             ${segmentInfo}
             <button 
@@ -1844,6 +1732,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         const routeResultForPopup: RouteResult = {
           distance,
           duration,
+          cost: tripCost,
           steps,
           geometry,
         };
@@ -1936,9 +1825,6 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         
         polyline.on('popupopen', handlePopupOpenOSRM);
 
-        setRouteInfo(routeResultForPopup);
-        setRouteSteps(steps);
-
         // Auto-save the route after it's calculated and displayed
         autoSaveRoute(routeResultForPopup, geometry, '#667eea');
 
@@ -1950,6 +1836,9 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         if (onHideDirections) {
           onHideDirections();
         }
+        
+        // Show routes modal to display the route preview
+        window.dispatchEvent(new CustomEvent('showSavedRoutesList'));
       } else {
         throw new Error(data.code || 'Route calculation failed');
       }
@@ -1974,160 +1863,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
   // Export formatDuration for use in other components
   (window as any).formatDuration = formatDuration;
 
-  const handleSaveRoute = useCallback(() => {
-    console.log('handleSaveRoute called', { routeInfo, origin, destination, currentRouteGeometry, currentRouteColor });
-    
-    if (!routeInfo) {
-      console.warn('No routeInfo available');
-      alert('No route to save. Please calculate a route first.');
-      return;
-    }
-    
-    if (!origin || !destination) {
-      console.warn('Missing origin or destination');
-      alert('Route origin or destination is missing.');
-      return;
-    }
-    
-    if (!currentRouteGeometry || currentRouteGeometry.length === 0) {
-      console.warn('No route geometry available', currentRouteGeometry);
-      alert('Route geometry is missing. Please recalculate the route.');
-      return;
-    }
-    
-    const routeName = prompt('Enter a name for this route:', 
-      `${travelMode.charAt(0).toUpperCase() + travelMode.slice(1)} route from ${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)} to ${destination.lat.toFixed(4)}, ${destination.lng.toFixed(4)}`
-    );
-    
-    if (!routeName || routeName.trim() === '') {
-      console.log('User cancelled or entered empty name');
-      return;
-    }
-    
-    try {
-      console.log('Saving route with data:', {
-        name: routeName.trim(),
-        origin,
-        destination,
-        waypoints: waypoints.length,
-        travelMode,
-        geometryPoints: currentRouteGeometry.length,
-        color: currentRouteColor,
-      });
-      
-      addSavedRoute({
-        name: routeName.trim(),
-        origin: {
-          lat: origin.lat,
-          lng: origin.lng,
-        },
-        destination: {
-          lat: destination.lat,
-          lng: destination.lng,
-        },
-        waypoints: waypoints.map(wp => ({
-          lat: wp.lat,
-          lng: wp.lng,
-          id: wp.id,
-        })),
-        travelMode,
-        routeInfo,
-        geometry: currentRouteGeometry,
-        color: currentRouteColor,
-      });
-      
-      // Notify other components
-      window.dispatchEvent(new CustomEvent('savedRoutesUpdated'));
-      
-      console.log('Route saved successfully');
-      alert('Route saved successfully!');
-    } catch (error) {
-      console.error('Error saving route:', error);
-      alert('Failed to save route. Please try again.');
-    }
-  }, [routeInfo, origin, destination, waypoints, travelMode, currentRouteGeometry, currentRouteColor]);
 
-  const copyDirectionsToClipboard = useCallback(() => {
-    if (routeSteps.length === 0 || !routeInfo) return;
-    
-    // Build text version of directions
-    let text = '📍 DIRECTIONS\n';
-    text += '═'.repeat(40) + '\n\n';
-    
-    // Add route summary
-    const travelModeEmoji = {
-      driving: '🚗',
-      walking: '🚶',
-      cycling: '🚴',
-      transit: '🚌',
-      plane: '✈️',
-      'container-ship': '🚢',
-      boat: '⛵'
-    }[travelMode] || '🗺️';
-    
-    text += `${travelModeEmoji} Travel Mode: ${travelMode.charAt(0).toUpperCase() + travelMode.slice(1)}\n`;
-    text += `📏 Total Distance: ${routeInfo.distance}\n`;
-    text += `⏱️  Total Duration: ${routeInfo.duration}\n`;
-    text += '\n' + '─'.repeat(40) + '\n\n';
-    
-    // Add turn-by-turn instructions
-    let stepCounter = 0;
-    routeSteps.forEach((step) => {
-      if (step.isSegmentStart) {
-        // Segment header
-        text += '\n' + '─'.repeat(40) + '\n';
-        text += `🗺️  ${step.instruction}\n`;
-        text += '─'.repeat(40) + '\n\n';
-      } else {
-        // Regular step
-        stepCounter++;
-        text += `${stepCounter}. ${step.instruction}\n`;
-        text += `   ${(step.distance / 1000).toFixed(2)} km · ${formatDuration(step.duration)}\n\n`;
-      }
-    });
-    
-    text += '─'.repeat(40) + '\n';
-    text += 'Generated by Maps Assistant\n';
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedDirections(true);
-      setTimeout(() => setCopiedDirections(false), 2000);
-    }).catch(err => {
-      console.error('Failed to copy directions:', err);
-    });
-  }, [routeSteps, routeInfo, travelMode]);
-
-  const handleGoBack = () => {
-    setRouteInfo(null);
-    setRouteSteps([]);
-    
-    // Remove route line from map
-    if (routeLineRef.current) {
-      routeLineRef.current.remove();
-      routeLineRef.current = null;
-    }
-    
-    // Restore original icons for origin and destination markers
-    if (originMarkerRef.current && originOriginalIconRef.current) {
-      restoreOriginalIcon(originMarkerRef.current, originOriginalIconRef.current);
-      originMarkerRef.current = null;
-      originOriginalIconRef.current = null;
-    }
-    
-    if (destinationMarkerRef.current && destinationOriginalIconRef.current) {
-      restoreOriginalIcon(destinationMarkerRef.current, destinationOriginalIconRef.current);
-      destinationMarkerRef.current = null;
-      destinationOriginalIconRef.current = null;
-    }
-    
-    // Clear saved route selection
-    window.dispatchEvent(new CustomEvent('clearSavedRouteSelection'));
-    
-    // Keep origin and destination coordinates, just reset the visual markers
-  };
-
-  const isViewingInstructions = routeInfo !== null;
 
   return (
     <DirectionsContainer>
@@ -2145,21 +1881,13 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
             Back
           </GoBackButton>
         ) : (
-          <>
-            {isViewingInstructions && (
-              <GoBackButton onClick={handleGoBack}>
-                <FiArrowLeft size={14} />
-                New route
-              </GoBackButton>
-            )}
-            <CloseButton 
-              onClick={() => setShowSettings(true)} 
-              title="Speed settings"
-              style={{ marginLeft: 'auto' }}
-            >
-              <FiSettings size={16} />
-            </CloseButton>
-          </>
+          <CloseButton 
+            onClick={() => setShowSettings(true)} 
+            title="Speed settings"
+            style={{ marginLeft: 'auto' }}
+          >
+            <FiSettings size={16} />
+          </CloseButton>
         )}
       </DirectionsHeader>
 
@@ -2182,8 +1910,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
               </ErrorBox>
             )}
         
-        {!isViewingInstructions && (
-          <>
+        <>
 
             <SelectPointsButton 
               onClick={togglePointSelection}
@@ -2311,70 +2038,8 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
             >
               {isCalculating ? 'Calculating...' : 'Get Directions'}
             </GetDirectionsButton>
-          </>
-        )}
+        </>
 
-        {routeInfo && (
-          <>
-            <RouteInfo>
-              <RouteInfoRow>
-                <RouteInfoLabel>Distance:</RouteInfoLabel>
-                <RouteInfoValue>{routeInfo.distance}</RouteInfoValue>
-              </RouteInfoRow>
-              <RouteInfoRow>
-                <RouteInfoLabel>Duration:</RouteInfoLabel>
-                <RouteInfoValue>{routeInfo.duration}</RouteInfoValue>
-              </RouteInfoRow>
-            </RouteInfo>
-
-            <SaveRouteButton onClick={handleSaveRoute}>
-              <FiSave size={14} />
-              Save Route
-            </SaveRouteButton>
-
-            {routeSteps.length > 0 && (
-              <StepsContainer>
-                <StepsTitle>
-                  <StepsTitleText>📍 Turn-by-Turn Directions ({routeSteps.length} steps)</StepsTitleText>
-                  <CopyButton 
-                    onClick={copyDirectionsToClipboard}
-                    $copied={copiedDirections}
-                  >
-                    <FiCopy size={12} />
-                    {copiedDirections ? 'Copied!' : 'Copy'}
-                  </CopyButton>
-                </StepsTitle>
-                {routeSteps.map((step, index) => {
-                  // Render segment header
-                  if (step.isSegmentStart) {
-                    return (
-                      <SegmentHeader key={`segment-${index}`}>
-                        🗺️ {step.instruction}
-                      </SegmentHeader>
-                    );
-                  }
-                  
-                  // Calculate step number (excluding segment headers)
-                  const stepNumber = routeSteps.slice(0, index).filter(s => !s.isSegmentStart).length + 1;
-                  
-                  return (
-                    <StepItem key={index}>
-                      <StepNumber>{stepNumber}</StepNumber>
-                      <StepContent>
-                        <StepInstruction>
-                          {step.instruction}
-                        </StepInstruction>
-                        <StepDistance>
-                          {(step.distance / 1000).toFixed(2)} km · {formatDuration(step.duration)}
-                        </StepDistance>
-                      </StepContent>
-                    </StepItem>
-                  );
-                })}
-              </StepsContainer>
-            )}
-          </>
-        )}
           </>
         )}
       </DirectionsContent>

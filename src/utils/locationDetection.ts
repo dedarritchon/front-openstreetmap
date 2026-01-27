@@ -533,7 +533,7 @@ export async function resolveShortenedMapsLink(
  */
 export async function extractPlaceFromMapsUrl(
   url: string,
-  _map?: any // Leaflet map, not used but kept for compatibility
+  _map: any // Leaflet map, not used but kept for compatibility
 ): Promise<{ lat: number; lng: number } | null> {
   try {
     // Try to extract place name from URL

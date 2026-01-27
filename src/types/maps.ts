@@ -28,6 +28,7 @@ export interface RouteStep {
 export interface RouteResult {
   distance: string;
   duration: string;
+  cost?: string;
   steps: RouteStep[];
   geometry: LatLngExpression[];
 }

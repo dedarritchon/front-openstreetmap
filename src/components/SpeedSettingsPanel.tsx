@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { FiRotateCcw } from 'react-icons/fi';
 import styled from 'styled-components';
-import { loadSpeedSettings, saveSpeedSettings, resetSpeedSettings, type SpeedSettings } from '../utils/speedSettings';
+import { 
+  loadTransportSettings, 
+  saveTransportSettings, 
+  resetTransportSettings, 
+  type SpeedSettings,
+  type CostSettings,
+  type TransportSettings 
+} from '../utils/speedSettings';
 
 const SettingsContainer = styled.div`
   width: 100%;
@@ -21,7 +28,13 @@ const SettingsDescription = styled.div`
 `;
 
 const SpeedInputGroup = styled.div`
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  
+  &:last-of-type {
+    border-bottom: none;
+  }
 `;
 
 const SpeedInputLabel = styled.label`
@@ -29,23 +42,38 @@ const SpeedInputLabel = styled.label`
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: #333;
+  margin-bottom: 10px;
+`;
+
+const InputRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
+`;
+
+const InputLabel = styled.div`
+  font-size: 11px;
+  color: #666;
+  min-width: 60px;
+  font-weight: 500;
 `;
 
 const SpeedInputWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
 `;
 
 const SpeedInput = styled.input`
   flex: 1;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border: 1px solid #dee2e6;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   transition: all 0.2s;
 
   &:focus {
@@ -56,9 +84,9 @@ const SpeedInput = styled.input`
 `;
 
 const SpeedUnit = styled.span`
-  font-size: 12px;
+  font-size: 11px;
   color: #666;
-  min-width: 40px;
+  min-width: 45px;
 `;
 
 const ModeIcon = styled.span`
@@ -125,46 +153,62 @@ const TRAVEL_MODE_CONFIG: Array<{
   icon: string;
   description: string;
 }> = [
-  { key: 'driving', label: 'Driving', icon: '🚗', description: 'Average speed for car travel (urban/highway mix)' },
-  { key: 'walking', label: 'Walking', icon: '🚶', description: 'Average walking speed' },
-  { key: 'cycling', label: 'Cycling', icon: '🚴', description: 'Average cycling speed' },
-  { key: 'transit', label: 'Transit', icon: '🚌', description: 'Average public transit speed (includes stops)' },
-  { key: 'plane', label: 'Plane', icon: '✈️', description: 'Commercial plane cruising speed' },
-  { key: 'boat', label: 'Boat', icon: '⛵', description: 'Average boat speed' },
-  { key: 'container-ship', label: 'Container Ship', icon: '🚢', description: 'Container ship average speed' },
+  { key: 'driving', label: 'Driving', icon: '🚗', description: 'Car travel (fuel + maintenance)' },
+  { key: 'walking', label: 'Walking', icon: '🚶', description: 'On foot - zero cost!' },
+  { key: 'cycling', label: 'Cycling', icon: '🚴', description: 'Bike - minimal cost' },
+  { key: 'transit', label: 'Transit', icon: '🚌', description: 'Public transportation' },
+  { key: 'plane', label: 'Plane', icon: '✈️', description: 'Commercial flight' },
+  { key: 'boat', label: 'Boat', icon: '⛵', description: 'Personal watercraft' },
+  { key: 'container-ship', label: 'Container Ship', icon: '🚢', description: 'Cargo shipping' },
 ];
 
 const SpeedSettingsPanel = () => {
-  const [settings, setSettings] = useState<SpeedSettings>(loadSpeedSettings());
+  const [settings, setSettings] = useState<TransportSettings>(loadTransportSettings());
   const [showSuccess, setShowSuccess] = useState(false);
 
   const handleSpeedChange = (mode: keyof SpeedSettings, value: string) => {
     const numValue = parseFloat(value);
-    if (!isNaN(numValue) && numValue > 0) {
+    if (!isNaN(numValue) && numValue >= 0) {
       setSettings(prev => ({
         ...prev,
-        [mode]: numValue,
+        speeds: {
+          ...prev.speeds,
+          [mode]: numValue,
+        },
+      }));
+    }
+  };
+
+  const handleCostChange = (mode: keyof CostSettings, value: string) => {
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue) && numValue >= 0) {
+      setSettings(prev => ({
+        ...prev,
+        costs: {
+          ...prev.costs,
+          [mode]: numValue,
+        },
       }));
     }
   };
 
   const handleSave = () => {
-    saveSpeedSettings(settings);
+    saveTransportSettings(settings);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
     
     // Notify other components that settings have changed
-    window.dispatchEvent(new CustomEvent('speedSettingsChanged', { detail: settings }));
+    window.dispatchEvent(new CustomEvent('transportSettingsChanged', { detail: settings }));
   };
 
   const handleReset = () => {
-    const defaults = resetSpeedSettings();
+    const defaults = resetTransportSettings();
     setSettings(defaults);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
     
     // Notify other components that settings have changed
-    window.dispatchEvent(new CustomEvent('speedSettingsChanged', { detail: defaults }));
+    window.dispatchEvent(new CustomEvent('transportSettingsChanged', { detail: defaults }));
   };
 
   return (
@@ -177,7 +221,7 @@ const SpeedSettingsPanel = () => {
         )}
         
         <SettingsDescription>
-          Customize the average speeds used for calculating travel times. These values are saved locally and will be used for all route calculations.
+          Customize average speeds and costs per kilometer for each transport mode. These values are saved locally and used for all route calculations.
         </SettingsDescription>
 
         {TRAVEL_MODE_CONFIG.map(({ key, label, icon, description }) => (
@@ -186,18 +230,38 @@ const SpeedSettingsPanel = () => {
               <ModeIcon>{icon}</ModeIcon>
               <span>{label}</span>
             </SpeedInputLabel>
-            <SpeedInputWrapper>
-              <SpeedInput
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={settings[key]}
-                onChange={(e) => handleSpeedChange(key, e.target.value)}
-                placeholder="0"
-              />
-              <SpeedUnit>km/h</SpeedUnit>
-            </SpeedInputWrapper>
-            <div style={{ fontSize: '11px', color: '#999', marginTop: '4px', paddingLeft: '32px' }}>
+            
+            <InputRow>
+              <InputLabel>Speed:</InputLabel>
+              <SpeedInputWrapper>
+                <SpeedInput
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value={settings.speeds[key]}
+                  onChange={(e) => handleSpeedChange(key, e.target.value)}
+                  placeholder="0"
+                />
+                <SpeedUnit>km/h</SpeedUnit>
+              </SpeedInputWrapper>
+            </InputRow>
+            
+            <InputRow>
+              <InputLabel>Cost:</InputLabel>
+              <SpeedInputWrapper>
+                <SpeedInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settings.costs[key]}
+                  onChange={(e) => handleCostChange(key, e.target.value)}
+                  placeholder="0.00"
+                />
+                <SpeedUnit>$ / km</SpeedUnit>
+              </SpeedInputWrapper>
+            </InputRow>
+            
+            <div style={{ fontSize: '10px', color: '#999', marginTop: '6px', paddingLeft: '8px' }}>
               {description}
             </div>
           </SpeedInputGroup>

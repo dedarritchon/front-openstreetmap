@@ -6,6 +6,7 @@ export interface PinnedLocation {
   id: string;
   text: string;
   address?: string;
+  name?: string; // user-editable display name (defaults to address || text)
   pinnedAt: number; // timestamp
 }
 
@@ -44,9 +45,10 @@ export const addPinnedLocation = (location: Omit<PinnedLocation, 'pinnedAt'>): v
   );
   
   if (!isDuplicate) {
-    pinned.push(newLocation);
+    const withName = { ...newLocation, name: newLocation.name ?? newLocation.address ?? newLocation.text };
+    pinned.push(withName);
     savePinnedLocations(pinned);
-    console.log('✅ Location pinned:', location.address || `${location.lat}, ${location.lng}`);
+    console.log('✅ Location pinned:', withName.name || `${location.lat}, ${location.lng}`);
   } else {
     console.log('ℹ️  Location already pinned');
   }
@@ -66,4 +68,22 @@ export const isLocationPinned = (locationId: string, lat: number, lng: number): 
       p.id === locationId ||
       (Math.abs(p.lat - lat) < 0.0001 && Math.abs(p.lng - lng) < 0.0001)
   );
+};
+
+export const updatePinnedLocation = (locationId: string, updates: Partial<Pick<PinnedLocation, 'name' | 'address' | 'text'>>): void => {
+  const pinned = loadPinnedLocations();
+  const index = pinned.findIndex((p) => p.id === locationId);
+  if (index === -1) return;
+  
+  // Update the location with new values
+  pinned[index] = { ...pinned[index], ...updates };
+  
+  // If address was updated and name hasn't been manually set (i.e., it's still the temp coordinate text),
+  // update the name to use the new address
+  if (updates.address && pinned[index].name && pinned[index].name.startsWith('Location at ')) {
+    pinned[index].name = updates.address;
+  }
+  
+  savePinnedLocations(pinned);
+  console.log('✅ Location updated:', pinned[index].name || `${pinned[index].lat}, ${pinned[index].lng}`);
 };
