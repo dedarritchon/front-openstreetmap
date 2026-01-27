@@ -58,7 +58,8 @@ const parseCSV = (content: string): Array<{ lat: number; lng: number; name: stri
       if (!matches || matches.length < 2) continue;
       
       // Extract coord and name
-      const coordStr = matches[0].replace(/[",]/g, '').trim();
+      // Remove surrounding quotes and commas from the match, but preserve commas inside the coordinate string
+      const coordStr = matches[0].replace(/^"|"$/g, '').replace(/,$/, '').trim();
       const name = matches.slice(1).join(',').replace(/^"|"$/g, '').replace(/""/g, '"').trim();
       
       // Parse coordinates

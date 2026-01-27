@@ -579,8 +579,6 @@ const OpenStreetMapApp = () => {
         onToggleDirections={() => openDirections(!showDirections)}
         onToggleSavedRoutesList={() => openSavedRoutesList(!showSavedRoutesList)}
         onToggleLocationsList={() => openListView(!showListView)}
-        onExportPoints={handleExportPoints}
-        onImportPoints={handleImportPoints}
       >
         <SearchInput
           searchQuery={searchQuery}
@@ -689,6 +687,8 @@ const OpenStreetMapApp = () => {
               openDirections(true);
             }}
             onClose={() => openListView(false)}
+            onExportPoints={handleExportPoints}
+            onImportPoints={handleImportPoints}
           />
         </div>
       )}

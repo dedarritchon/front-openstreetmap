@@ -1,7 +1,5 @@
 import styled from 'styled-components';
-import { useRef } from 'react';
 import type { MapStyle } from './MapComponent';
-import { FiDownload, FiUpload } from 'react-icons/fi';
 
 const HeaderContainer = styled.div`
   background: white;
@@ -41,8 +39,6 @@ interface HeaderProps {
   onToggleDirections: () => void;
   onToggleSavedRoutesList: () => void;
   onToggleLocationsList: () => void;
-  onExportPoints: () => void;
-  onImportPoints: (file: File) => void;
   children?: React.ReactNode;
 }
 
@@ -57,11 +53,8 @@ export const Header = ({
   onToggleDirections,
   onToggleSavedRoutesList,
   onToggleLocationsList,
-  onExportPoints,
-  onImportPoints,
   children,
 }: HeaderProps) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMapStyleToggle = () => {
     if (mapStyle === 'standard') {
@@ -70,19 +63,6 @@ export const Header = ({
       onMapStyleChange('terrain');
     } else {
       onMapStyleChange('standard');
-    }
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onImportPoints(file);
-      // Reset input so same file can be imported again
-      event.target.value = '';
     }
   };
 
@@ -98,32 +78,6 @@ export const Header = ({
       {children}
       
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <LocationCountButton 
-          onClick={onExportPoints}
-          title="Export points to CSV"
-          disabled={totalLocations === 0}
-          style={{ 
-            opacity: totalLocations === 0 ? 0.5 : 1,
-            cursor: totalLocations === 0 ? 'not-allowed' : 'pointer'
-          }}
-        >
-          <FiDownload style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-          Export
-        </LocationCountButton>
-        <LocationCountButton 
-          onClick={handleImportClick}
-          title="Import points from CSV"
-        >
-          <FiUpload style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-          Import
-        </LocationCountButton>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          style={{ display: 'none' }}
-          onChange={handleFileChange}
-        />
         <LocationCountButton 
           onClick={onToggleDirections}
           style={{ 

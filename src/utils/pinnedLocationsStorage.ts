@@ -71,9 +71,16 @@ export const isLocationPinned = (locationId: string, lat: number, lng: number): 
 };
 
 export const updatePinnedLocation = (locationId: string, updates: Partial<Pick<PinnedLocation, 'name' | 'address' | 'text'>>): void => {
+  console.log('🔄 updatePinnedLocation called for:', locationId, 'with updates:', updates);
   const pinned = loadPinnedLocations();
   const index = pinned.findIndex((p) => p.id === locationId);
-  if (index === -1) return;
+  
+  if (index === -1) {
+    console.log('⚠️  Location not found in storage:', locationId);
+    return;
+  }
+  
+  console.log('📍 Current location before update:', JSON.stringify(pinned[index]));
   
   // Update the location with new values
   pinned[index] = { ...pinned[index], ...updates };
@@ -81,9 +88,12 @@ export const updatePinnedLocation = (locationId: string, updates: Partial<Pick<P
   // If address was updated and name hasn't been manually set (i.e., it's still the temp coordinate text),
   // update the name to use the new address
   if (updates.address && pinned[index].name && pinned[index].name.startsWith('Location at ')) {
+    console.log('🔄 Updating name from temp text to address:', updates.address);
     pinned[index].name = updates.address;
   }
   
+  console.log('📍 Location after update:', JSON.stringify(pinned[index]));
+  
   savePinnedLocations(pinned);
-  console.log('✅ Location updated:', pinned[index].name || `${pinned[index].lat}, ${pinned[index].lng}`);
+  console.log('✅ Location updated and saved:', pinned[index].name || `${pinned[index].lat}, ${pinned[index].lng}`);
 };

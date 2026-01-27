@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiMapPin, FiTrash2, FiX, FiArrowLeft, FiEdit2, FiCheck, FiMap, FiNavigation } from 'react-icons/fi';
+import { FiMapPin, FiTrash2, FiX, FiArrowLeft, FiEdit2, FiCheck, FiMap, FiNavigation, FiDownload, FiUpload } from 'react-icons/fi';
 import styled from 'styled-components';
 
 import type { DetectedLocation } from '../types/locations';
@@ -49,6 +49,25 @@ const HeaderTitle = styled.div`
   font-weight: 600;
   font-size: 14px;
   flex: 1;
+`;
+
+const HeaderButton = styled.button`
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
 `;
 
 const CloseButton = styled.button`
@@ -363,6 +382,8 @@ interface LocationsListProps {
   onUpdateLocation?: (locationId: string, updates: { name: string }) => void;
   onGetDirections?: (location: DetectedLocation) => void;
   onClose?: () => void;
+  onExportPoints?: () => void;
+  onImportPoints?: (file: File) => void;
 }
 
 const LocationsList = ({
@@ -374,10 +395,25 @@ const LocationsList = ({
   onUpdateLocation,
   onGetDirections,
   onClose,
+  onExportPoints,
+  onImportPoints,
 }: LocationsListProps) => {
   const [previewLocation, setPreviewLocation] = useState<{ location: LocationListItem; isSaved: boolean } | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
+  
+  const handleImportClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file && onImportPoints) {
+        onImportPoints(file);
+      }
+    };
+    input.click();
+  };
 
   useEffect(() => {
     if (previewLocation) {
@@ -634,6 +670,16 @@ const LocationsList = ({
             <FiMapPin size={16} />
             Locations ({conversationLocations.length + savedLocations.length})
           </HeaderTitle>
+          {onExportPoints && savedLocations.length > 0 && (
+            <HeaderButton onClick={onExportPoints} title="Export points to CSV">
+              <FiDownload size={14} />
+            </HeaderButton>
+          )}
+          {onImportPoints && (
+            <HeaderButton onClick={handleImportClick} title="Import points from CSV">
+              <FiUpload size={14} />
+            </HeaderButton>
+          )}
           {onClose && (
             <CloseButton onClick={onClose} title="Close">
               <FiX size={16} />
