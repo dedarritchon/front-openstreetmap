@@ -52,12 +52,14 @@ Once you add the images, they will automatically appear on the user guide page. 
    - Screenshots that exist will display
    - Placeholders for missing screenshots
 
-## After Deployment
+## After Deployment to GitHub Pages
 
 Once deployed to GitHub Pages, the user guide will be available at:
 ```
-https://yourusername.github.io/front-openstreetmap/user-guide.html
+https://<username>.github.io/front-openstreetmap/user-guide.html
 ```
+
+The user guide is now configured with relative paths that work both locally and on GitHub Pages!
 
 ## Image Recommendations
 
@@ -71,4 +73,5 @@ https://yourusername.github.io/front-openstreetmap/user-guide.html
 
 - The page will gracefully handle missing images
 - You can add screenshots gradually - the page works with partial images
-- Images are loaded from the `/images/guide/` path relative to your site root
+- Images are loaded with relative paths (./images/guide/) which work on GitHub Pages
+- The user-guide.html is in the `/public` folder and will be deployed automatically
