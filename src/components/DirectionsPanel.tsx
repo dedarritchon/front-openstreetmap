@@ -317,9 +317,10 @@ interface DirectionsPanelProps {
   onHideDirections?: () => void;
   onClose?: () => void;
   savedRouteToLoad?: SavedRoute | null;
+  conversationId?: string;
 }
 
-const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections, onHideDirections, onClose, savedRouteToLoad }: DirectionsPanelProps) => {
+const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections, onHideDirections, onClose, savedRouteToLoad, conversationId }: DirectionsPanelProps) => {
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState<{ lat: number; lng: number } | null>(null);
   const [waypoints, setWaypoints] = useState<Array<{ lat: number; lng: number; id: string }>>([]);
@@ -573,6 +574,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
         routeInfo: routeResult,
         geometry: geometry,
         color: routeColor,
+        conversationId,
       });
       
       // Notify other components
@@ -1354,6 +1356,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
                     routeInfo: routeResult,
                     geometry: geometry,
                     color: routeColor,
+                    conversationId,
                   });
                   
                   window.dispatchEvent(new CustomEvent('savedRoutesUpdated'));
@@ -1805,6 +1808,7 @@ const DirectionsPanel = ({ map, onRouteCalculated, markersMap, onShowDirections,
                     routeInfo: routeResultForPopup,
                     geometry: geometry,
                     color: '#667eea',
+                    conversationId,
                   });
                   
                   window.dispatchEvent(new CustomEvent('savedRoutesUpdated'));

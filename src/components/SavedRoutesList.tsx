@@ -422,6 +422,7 @@ interface SavedRoutesListProps {
   onClose: () => void;
   onRouteToggle: (routeId: string, visible: boolean) => void;
   visibleRouteIds: Set<string>;
+  filteredRoutes?: SavedRoute[];
 }
 
 const formatDuration = (seconds: number): string => {
@@ -437,9 +438,10 @@ const formatDuration = (seconds: number): string => {
 const SavedRoutesList = ({ 
   onClose, 
   onRouteToggle, 
-  visibleRouteIds
+  visibleRouteIds,
+  filteredRoutes
 }: SavedRoutesListProps) => {
-  const [routes, setRoutes] = useState<SavedRoute[]>(loadSavedRoutes());
+  const [routes, setRoutes] = useState<SavedRoute[]>(filteredRoutes || loadSavedRoutes());
   const [previewRoute, setPreviewRoute] = useState<SavedRoute | null>(null);
   const [copiedDirections, setCopiedDirections] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -448,7 +450,7 @@ const SavedRoutesList = ({
   // Listen for route updates
   useEffect(() => {
     const handleRoutesUpdate = () => {
-      const updatedRoutes = loadSavedRoutes();
+      const updatedRoutes = filteredRoutes || loadSavedRoutes();
       setRoutes(updatedRoutes);
       
       // Update preview route if it exists
@@ -475,7 +477,7 @@ const SavedRoutesList = ({
     return () => {
       window.removeEventListener('savedRoutesUpdated', handleRoutesUpdate);
     };
-  }, [previewRoute]);
+  }, [previewRoute, filteredRoutes]);
 
   // Update edited name when preview route changes
   useEffect(() => {

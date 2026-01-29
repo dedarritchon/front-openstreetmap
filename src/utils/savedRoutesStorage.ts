@@ -11,6 +11,7 @@ export interface SavedRoute {
   geometry: [number, number][];
   color: string;
   savedAt: number; // timestamp
+  conversationId?: string; // Front conversation ID
 }
 
 const STORAGE_KEY = 'front-openstreetmap-saved-routes';

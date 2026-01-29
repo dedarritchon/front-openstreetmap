@@ -90,7 +90,7 @@ const parseCSV = (content: string): Array<{ lat: number; lng: number; name: stri
 /**
  * Import points from CSV file
  */
-export const importPointsFromCSV = (file: File): Promise<number> => {
+export const importPointsFromCSV = (file: File, conversationId?: string): Promise<number> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     
@@ -115,6 +115,7 @@ export const importPointsFromCSV = (file: File): Promise<number> => {
               lng: point.lng,
               text: point.name,
               name: point.name,
+              conversationId,
             });
             successCount++;
           } catch (error) {

@@ -9,7 +9,7 @@ import {
 } from '../utils/pinnedLocationsStorage';
 import type { Coordinate } from './useLocationDetection';
 
-export const usePinnedLocations = () => {
+export const usePinnedLocations = (conversationId?: string) => {
   const [pinnedLocations, setPinnedLocations] = useState<PinnedLocation[]>([]);
 
   // Load pinned locations on mount
@@ -35,7 +35,7 @@ export const usePinnedLocations = () => {
   }, []);
 
   const handlePinLocation = (location: Coordinate) => {
-    addPinnedLocation(location);
+    addPinnedLocation({ ...location, conversationId });
     const pinned = loadPinnedLocations();
     setPinnedLocations(pinned);
   };

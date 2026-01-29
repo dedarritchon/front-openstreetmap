@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Front OpenStreetMap Plugin - User Guide</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+    
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: #f5f7fa;
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      /* Map Background */
+      #map-background {
+        position: fixed;
+        top: -5%;
+        left: -5%;
+        width: 110%;
+        height: 110%;
+        z-index: 0;
+        opacity: 0.8;
+        filter: brightness(1.1) contrast(1.1);
+        pointer-events: none;
+      }
+
+      .content-wrapper {
+        position: relative;
+        z-index: 1;
+      }
+      
+      /* Add subtle backdrop to content for readability */
+      .content-wrapper::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(245, 247, 250, 0.5);
+        z-index: -1;
+      }
+
+      .header {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+        color: white;
+        padding: 3rem 2rem;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        position: relative;
+        z-index: 2;
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 700;
+      }
+
+      .header p {
+        font-size: 1.2rem;
+        opacity: 0.95;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+        position: relative;
+        z-index: 2;
+      }
+
+      .setup-section {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        backdrop-filter: blur(10px);
+      }
+
+      .setup-section h2 {
+        color: #667eea;
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .setup-steps {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+      }
+
+      .setup-steps ol {
+        margin-left: 1.5rem;
+      }
+
+      .setup-steps li {
+        font-size: 1.1rem;
+        margin: 1rem 0;
+        padding-left: 0.5rem;
+      }
+
+      .feature-section {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border-left: 4px solid #667eea;
+        backdrop-filter: blur(10px);
+      }
+
+      .feature-section h3 {
+        color: #2d3748;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .feature-description {
+        color: #4a5568;
+        margin-bottom: 1.5rem;
+        font-size: 1.05rem;
+      }
+
+      .screenshot-placeholder {
+        margin: 1rem 0;
+        display: block;
+      }
+
+      .screenshot-placeholder .placeholder-content {
+        background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 100%);
+        border: 2px dashed #667eea;
+        border-radius: 8px;
+        padding: 4rem 2rem;
+        text-align: center;
+        color: #667eea;
+        font-weight: 500;
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .screenshot-placeholder .placeholder-content svg {
+        width: 64px;
+        height: 64px;
+        opacity: 0.6;
+      }
+
+      .screenshot {
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        margin: 1rem 0;
+        display: block;
+      }
+      
+      .screenshot.hidden {
+        display: none;
+      }
+
+      .steps-list {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+      }
+
+      .steps-list ol {
+        margin-left: 1.5rem;
+      }
+
+      .steps-list li {
+        margin: 0.75rem 0;
+        color: #4a5568;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+      }
+
+      .feature-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border-top: 3px solid #667eea;
+        backdrop-filter: blur(10px);
+      }
+
+      .feature-card h4 {
+        color: #2d3748;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+      }
+
+      .feature-card p {
+        color: #4a5568;
+        font-size: 0.95rem;
+      }
+
+      .icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        display: block;
+      }
+
+      .transport-modes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      .transport-mode {
+        background: #f8f9fa;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 500;
+      }
+
+      .map-styles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      .map-style {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+      }
+
+      .map-style strong {
+        display: block;
+        color: #667eea;
+        margin-bottom: 0.5rem;
+      }
+
+      .footer {
+        text-align: center;
+        padding: 2rem;
+        color: #718096;
+        margin-top: 3rem;
+        position: relative;
+        z-index: 2;
+      }
+
+      .note {
+        background: #fff4e6;
+        border-left: 4px solid #ffa726;
+        padding: 1rem 1.5rem;
+        border-radius: 4px;
+        margin: 1rem 0;
+      }
+
+      .note strong {
+        color: #e65100;
+      }
+
+      @media (max-width: 768px) {
+        .header h1 {
+          font-size: 1.8rem;
+        }
+
+        .header p {
+          font-size: 1rem;
+        }
+
+        .container {
+          padding: 1rem;
+        }
+
+        .feature-section {
+          padding: 1.5rem;
+        }
+
+        .transport-modes {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Map Background -->
+    <div id="map-background"></div>
+
+    <div class="content-wrapper">
+    <div class="header">
+      <h1>🗺️ Front OpenStreetMap Plugin</h1>
+      <p>User Guide & Setup Instructions</p>
+    </div>
+
+    <div class="container">
+      <!-- Setup Section -->
+      <div class="setup-section">
+        <h2>🚀 Getting Started</h2>
+        <div class="setup-steps">
+          <ol>
+            <li><strong>Install the app</strong> from the Front App Store</li>
+            <li><strong>Open the sidebar plugin</strong> in Front to get started</li>
+            <li><strong>No setup required</strong> - start using it immediately!</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Feature 1: Conversation Integration -->
+      <div class="feature-section">
+        <h3>💬 See Locations Mentioned in Conversations</h3>
+        <div class="feature-description">
+          Automatically visualize locations mentioned in your current Front conversation on the map.
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/conversation-locations.png" alt="Conversation locations displayed on map" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: conversation-locations.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 2: Conversation Filtering -->
+      <div class="feature-section">
+        <h3>🔍 Filter by Conversation</h3>
+        <div class="feature-description">
+          View routes and points per conversation or all at the same time.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Click on the conversation filter dropdown</li>
+            <li>Select "Current Conversation Only" to see just the active conversation's locations</li>
+            <li>Select "All Conversations" to see all locations from every conversation</li>
+            <li>Or choose a specific conversation to focus on</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/conversation-filter.png" alt="Conversation filter dropdown" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: conversation-filter.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 3: Search Locations -->
+      <div class="feature-section">
+        <h3>🔎 Search Locations</h3>
+        <div class="feature-description">
+          Search for any location worldwide using the integrated search.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Use the search bar at the top of the map</li>
+            <li>Enter any address, city, or place name</li>
+            <li>Select from the search results to navigate to that location</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/location-search.png" alt="Location search feature" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: location-search.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 4: Create Pinpoints -->
+      <div class="feature-section">
+        <h3>📍 Create Pinpoints</h3>
+        <div class="feature-description">
+          Mark and save important locations on the map with custom names.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Click anywhere on the map to create a pinpoint</li>
+            <li>Add a custom name to your pinpoint for easy reference</li>
+            <li>Pinpoints are automatically saved and will persist across sessions</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/create-pinpoints.png" alt="Creating and naming pinpoints" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: create-pinpoints.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 5: Create Routes -->
+      <div class="feature-section">
+        <h3>🛣️ Create Routes from Pinpoints</h3>
+        <div class="feature-description">
+          Build routes by connecting multiple pinpoints with turn-by-turn directions.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Create or select multiple pinpoints on the map</li>
+            <li>Click "Create Route" in the directions panel</li>
+            <li>Select your transportation method</li>
+            <li>View turn-by-turn directions and total distance</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/create-routes.png" alt="Route creation with directions" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: create-routes.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 6: Transportation Modes -->
+      <div class="feature-section">
+        <h3>🚗 Transportation Modes</h3>
+        <div class="feature-description">
+          Choose from multiple transportation methods for your routes:
+        </div>
+        <div class="transport-modes">
+          <div class="transport-mode">🚗 Driving</div>
+          <div class="transport-mode">🚶 Walking</div>
+          <div class="transport-mode">🚴 Bicycle</div>
+          <div class="transport-mode">✈️ Plane</div>
+          <div class="transport-mode">🚢 Boat</div>
+          <div class="transport-mode">🚢 Container Ship</div>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/transportation-modes.png" alt="Transportation mode selector" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: transportation-modes.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 7: Speed & Cost Settings -->
+      <div class="feature-section">
+        <h3>⚙️ Editable Speed and Cost Per Transport Method</h3>
+        <div class="feature-description">
+          Configure travel speed and costs for accurate route calculations.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Open the Speed Settings panel (⚙️ icon)</li>
+            <li>Configure speed (km/h or mph) for each transport method</li>
+            <li>Set cost per kilometer/mile for each transportation type</li>
+            <li>Settings are saved automatically</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/speed-cost-settings.png" alt="Speed settings panel" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: speed-cost-settings.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 8: Calculate Costs -->
+      <div class="feature-section">
+        <h3>💰 Calculate Costs for Routes</h3>
+        <div class="feature-description">
+          Automatically calculate total costs for your routes based on distance and transport method.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Create or select a route</li>
+            <li>Choose your transportation method</li>
+            <li>View automatic cost calculation in the directions panel</li>
+            <li>See detailed cost breakdowns including distance and estimated time</li>
+          </ol>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/cost-calculation.png" alt="Cost calculation display" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: cost-calculation.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 10: Map Styles -->
+      <div class="feature-section">
+        <h3>🗺️ See Road, Terrain or Satellite Map</h3>
+        <div class="feature-description">
+          Switch between different map styles for different purposes.
+        </div>
+        <div class="steps-list">
+          <ol>
+            <li>Click the layers icon in the top-right corner of the map</li>
+            <li>Choose your preferred map style</li>
+          </ol>
+        </div>
+        <div class="map-styles">
+          <div class="map-style">
+            <strong>Road</strong>
+            <p>Best for navigation and street-level details</p>
+          </div>
+          <div class="map-style">
+            <strong>Terrain</strong>
+            <p>Shows elevation and topography</p>
+          </div>
+          <div class="map-style">
+            <strong>Satellite</strong>
+            <p>Aerial view for visual context</p>
+          </div>
+        </div>
+        <div class="screenshot-placeholder">
+          <img src="/images/guide/map-styles.png" alt="Map style switcher with examples" class="screenshot" onerror="this.classList.add('hidden'); this.parentElement.querySelector('.placeholder-content').style.display='flex';">
+          <div class="placeholder-content" style="display:none; flex-direction:column; align-items:center; justify-content:center; min-height:300px;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <div>Add screenshot: map-styles.png</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Additional Features -->
+      <div class="setup-section">
+        <h2>📦 Additional Features</h2>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <span class="icon">💾</span>
+            <h4>Save Routes</h4>
+            <p>Store your routes for future reference and quick access</p>
+          </div>
+          <div class="feature-card">
+            <span class="icon">📊</span>
+            <h4>Export Data</h4>
+            <p>Export locations and routes to CSV format for external use</p>
+          </div>
+          <div class="feature-card">
+            <span class="icon">🔒</span>
+            <h4>Persistent Storage</h4>
+            <p>All your pinpoints and routes are saved locally in your browser</p>
+          </div>
+          <div class="feature-card">
+            <span class="icon">🧭</span>
+            <h4>Turn-by-Turn Directions</h4>
+            <p>Get detailed navigation instructions for your routes</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Support Note -->
+      <div class="note">
+        <strong>Need Help?</strong> If you have questions or encounter any issues, please contact support through the Front app or visit our GitHub repository.
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Front OpenStreetMap Plugin © 2026</p>
+      <p>Built with OpenStreetMap, Leaflet, and React</p>
+    </div>
+    </div>
+
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
+    
+    <script>
+      // Initialize the background map
+      const map = L.map('map-background', {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        tap: false,
+        touchZoom: false
+      }).setView([20, 0], 3);
+
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        opacity: 1
+      }).addTo(map);
+
+      // Add random pinpoints around the world
+      const cities = [
+        { lat: 40.7128, lng: -74.0060, name: 'New York' },
+        { lat: 51.5074, lng: -0.1278, name: 'London' },
+        { lat: 35.6762, lng: 139.6503, name: 'Tokyo' },
+        { lat: -33.8688, lng: 151.2093, name: 'Sydney' },
+        { lat: 48.8566, lng: 2.3522, name: 'Paris' },
+        { lat: 55.7558, lng: 37.6173, name: 'Moscow' },
+        { lat: -23.5505, lng: -46.6333, name: 'São Paulo' },
+        { lat: 19.4326, lng: -99.1332, name: 'Mexico City' },
+        { lat: 1.3521, lng: 103.8198, name: 'Singapore' },
+        { lat: 25.2048, lng: 55.2708, name: 'Dubai' },
+        { lat: -1.2921, lng: 36.8219, name: 'Nairobi' },
+        { lat: 41.9028, lng: 12.4964, name: 'Rome' },
+        { lat: 52.5200, lng: 13.4050, name: 'Berlin' },
+        { lat: 37.7749, lng: -122.4194, name: 'San Francisco' },
+        { lat: -34.6037, lng: -58.3816, name: 'Buenos Aires' }
+      ];
+
+      cities.forEach((city, index) => {
+        const marker = L.marker([city.lat, city.lng], {
+          icon: L.divIcon({
+            className: 'custom-pin',
+            html: `<div style="
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              border-radius: 50%;
+              width: 24px;
+              height: 24px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: bold;
+              font-size: 11px;
+              border: 2px solid white;
+              box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+            ">${index + 1}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+          }),
+        }).addTo(map);
+      });
+
+      // Continuous horizontal scroll animation
+      let lng = -180; // Start from the far left
+      const scrollSpeed = 0.02; // Degrees per frame (adjust for speed)
+      
+      function animateScroll() {
+        lng += scrollSpeed;
+        
+        // When we reach the end, wrap around seamlessly
+        if (lng > 180) {
+          lng = -180;
+        }
+        
+        map.setView([20, lng], 3, { animate: false });
+        requestAnimationFrame(animateScroll);
+      }
+      
+      animateScroll();
+    </script>
+  </body>
+</html>

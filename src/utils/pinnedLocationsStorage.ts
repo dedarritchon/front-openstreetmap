@@ -8,6 +8,7 @@ export interface PinnedLocation {
   address?: string;
   name?: string; // user-editable display name (defaults to address || text)
   pinnedAt: number; // timestamp
+  conversationId?: string; // Front conversation ID
 }
 
 export const loadPinnedLocations = (): PinnedLocation[] => {

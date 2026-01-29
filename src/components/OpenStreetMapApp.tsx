@@ -1,22 +1,25 @@
 import L from 'leaflet';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 
 import MapComponent, { type MapStyle } from './MapComponent';
 import LocationsList from './LocationsList';
 import DirectionsPanel from './DirectionsPanel';
 import SavedRoutesList from './SavedRoutesList';
+import ConversationFilter from './ConversationFilter';
 import { Header } from './Header';
 import { SearchInput } from './SearchInput';
 import { useLocationDetection, type Coordinate } from '../hooks/useLocationDetection';
 import { useLocationSearch } from '../hooks/useLocationSearch';
 import { usePinnedLocations } from '../hooks/usePinnedLocations';
 import { useMarkers } from '../hooks/useMarkers';
+import { useFrontContext } from '../hooks/useFrontContext';
 import { loadSavedRoutes, removeSavedRoute, type SavedRoute } from '../utils/savedRoutesStorage';
 import { loadMapStyle, saveMapStyle } from '../utils/mapStyleStorage';
 import { reverseGeocode } from '../utils/locationDetection';
 import { addPinnedLocation } from '../utils/pinnedLocationsStorage';
 import { exportPointsToCSV, importPointsFromCSV } from '../utils/csvExport';
+import { getAllConversations, type ConversationInfo } from '../utils/conversationFiltering';
 
 const AppContainer = styled.div`
   display: flex;
@@ -86,6 +89,13 @@ const SelectionBannerIcon = styled.div`
   }
 `;
 
+const ConversationFilterWrapper = styled.div`
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1500;
+`;
+
 const OpenStreetMapApp = () => {
   const [map, setMap] = useState<L.Map | null>(null);
   const [showListView, setShowListView] = useState(false);
@@ -96,10 +106,17 @@ const OpenStreetMapApp = () => {
   const [showSavedRoutesList, setShowSavedRoutesList] = useState(false);
   const [selectedSavedRoute, setSelectedSavedRoute] = useState<SavedRoute | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyle>(() => loadMapStyle());
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+
+  // Get Front context for conversation ID
+  const frontContext = useFrontContext();
 
   // Custom hooks
   const { coordinates, isLoadingLocations, setCoordinates } = useLocationDetection();
-  const { pinnedLocations, handlePinLocation, handleUnpinLocation, handleUpdatePinnedLocation } = usePinnedLocations();
+  const { pinnedLocations, handlePinLocation, handleUnpinLocation, handleUpdatePinnedLocation } = usePinnedLocations(
+    frontContext && 'conversation' in frontContext ? frontContext.conversation?.id : undefined
+  );
   const {
     searchQuery,
     isSearching,
@@ -139,10 +156,17 @@ const OpenStreetMapApp = () => {
     }
   }, []);
 
+  // Memoize filtered pinned locations to prevent infinite loop
+  const filteredPinnedLocations = useMemo(() => {
+    return pinnedLocations.filter(loc => 
+      selectedConversationId === null || loc.conversationId === selectedConversationId
+    );
+  }, [pinnedLocations, selectedConversationId]);
+
   const { markersMapRef, findAndOpenMarker } = useMarkers(
     map,
     coordinates,
-    pinnedLocations
+    filteredPinnedLocations
   );
 
   // Handle location click (center map on location or switch to map view)
@@ -169,6 +193,19 @@ const OpenStreetMapApp = () => {
       window.removeEventListener('selectionModeChanged', handleSelectionModeChange as EventListener);
     };
   }, []);
+  
+  // Update conversations when pinned locations change
+  useEffect(() => {
+    const handlePinnedLocationsUpdate = () => {
+      setConversations(getAllConversations());
+    };
+    
+    window.addEventListener('pinnedLocationsUpdated', handlePinnedLocationsUpdate);
+    
+    return () => {
+      window.removeEventListener('pinnedLocationsUpdated', handlePinnedLocationsUpdate);
+    };
+  }, []);
 
   // Handle map clicks to pin locations
   useEffect(() => {
@@ -183,6 +220,9 @@ const OpenStreetMapApp = () => {
       // Create a unique ID for this location
       const locationId = `map-click-${lat}-${lng}-${Date.now()}`;
       
+      // Get current conversation ID from Front context
+      const conversationId = frontContext && 'conversation' in frontContext ? frontContext.conversation?.id : undefined;
+      
       // Add to pinned locations immediately with temporary text
       const tempText = `Location at ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       addPinnedLocation({
@@ -191,12 +231,13 @@ const OpenStreetMapApp = () => {
         lng,
         text: tempText,
         address: undefined,
+        conversationId,
       });
       
       // Notify that pinned locations were updated
       window.dispatchEvent(new CustomEvent('pinnedLocationsUpdated'));
       
-      console.log('📍 Location pinned instantly from map click:', tempText);
+      console.log('📍 Location pinned instantly from map click:', tempText, 'Conversation:', conversationId);
       
       // Reverse geocode in the background to get address (non-blocking)
       reverseGeocode(lat, lng)
@@ -220,7 +261,7 @@ const OpenStreetMapApp = () => {
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [map, isSelectingPoints, handleUpdatePinnedLocation]);
+  }, [map, isSelectingPoints, handleUpdatePinnedLocation, frontContext]);
 
   // Load saved routes on mount and listen for updates
   useEffect(() => {
@@ -228,6 +269,9 @@ const OpenStreetMapApp = () => {
       const routes = loadSavedRoutes();
       setSavedRoutes(routes);
       setVisibleRouteIds(new Set(routes.map(r => r.id)));
+      
+      // Update conversations list
+      setConversations(getAllConversations());
     };
     
     loadRoutes();
@@ -252,8 +296,13 @@ const OpenStreetMapApp = () => {
     });
     savedRoutePolylinesRef.current.clear();
 
-    savedRoutes.forEach((route) => {
+      savedRoutes.forEach((route) => {
       if (!visibleRouteIds.has(route.id)) return;
+      
+      // Filter by conversation if one is selected
+      if (!filteredRoutes.some(r => r.id === route.id)) {
+        return;
+      }
 
       try {
         const polyline = L.polyline(route.geometry as L.LatLngExpression[], {
@@ -338,7 +387,7 @@ const OpenStreetMapApp = () => {
       });
       savedRoutePolylinesRef.current.clear();
     };
-  }, [map, savedRoutes, visibleRouteIds]);
+  }, [map, savedRoutes, visibleRouteIds, selectedConversationId]);
 
   // Handle route visibility toggle
   const handleRouteToggle = useCallback((routeId: string, visible: boolean) => {
@@ -352,6 +401,27 @@ const OpenStreetMapApp = () => {
       return newSet;
     });
   }, []);
+
+  // Memoize filtered routes to prevent unnecessary re-renders
+  const filteredRoutes = useMemo(() => {
+    return savedRoutes.filter(r => 
+      selectedConversationId === null || r.conversationId === selectedConversationId
+    );
+  }, [savedRoutes, selectedConversationId]);
+
+  // Memoize filtered saved locations for LocationsList
+  const filteredSavedLocations = useMemo(() => {
+    return pinnedLocations
+      .filter(p => selectedConversationId === null || p.conversationId === selectedConversationId)
+      .map(p => ({
+        id: p.id,
+        text: p.text,
+        type: 'coordinates' as const,
+        coordinates: { lat: p.lat, lng: p.lng },
+        formattedAddress: p.address,
+        name: p.name ?? p.address ?? p.text,
+      }));
+  }, [pinnedLocations, selectedConversationId]);
 
   // Listen for route deletion from map popup
   useEffect(() => {
@@ -451,13 +521,14 @@ const OpenStreetMapApp = () => {
   // Handle import points from CSV
   const handleImportPoints = useCallback(async (file: File) => {
     try {
-      const count = await importPointsFromCSV(file);
+      const conversationId = frontContext && 'conversation' in frontContext ? frontContext.conversation?.id : undefined;
+      const count = await importPointsFromCSV(file, conversationId);
       alert(`✅ Successfully imported ${count} points`);
     } catch (error) {
       console.error('Error importing CSV:', error);
       alert(`❌ Error importing CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [frontContext]);
 
   // Setup marker popup handlers: when in selection mode, close popup on open
   useEffect(() => {
@@ -598,6 +669,13 @@ const OpenStreetMapApp = () => {
 
       <MainContent>
         <MapSection>
+          <ConversationFilterWrapper>
+            <ConversationFilter
+              conversations={conversations}
+              selectedConversationId={selectedConversationId}
+              onSelectConversation={setSelectedConversationId}
+            />
+          </ConversationFilterWrapper>
           <SelectionBanner $visible={isSelectingPoints && !showListView && !showDirections}>
             <SelectionBannerIcon />
             <span>Click on the map or a marker to select a point...</span>
@@ -606,7 +684,7 @@ const OpenStreetMapApp = () => {
             position: 'absolute', 
             top: '16px', 
             right: '16px', 
-            zIndex: 1000,
+            zIndex: 2000,
             maxWidth: '400px',
             width: '100%',
             display: showDirections ? 'block' : 'none'
@@ -626,6 +704,7 @@ const OpenStreetMapApp = () => {
                 setSelectedSavedRoute(null);
               }}
               savedRouteToLoad={selectedSavedRoute}
+              conversationId={frontContext && 'conversation' in frontContext ? frontContext.conversation?.id : undefined}
             />
           </div>
           <MapComponent onMapLoad={setMap} mapStyle={mapStyle} />
@@ -651,14 +730,7 @@ const OpenStreetMapApp = () => {
                 coordinates: { lat: c.lat, lng: c.lng },
                 formattedAddress: c.address,
               }))}
-            savedLocations={pinnedLocations.map(p => ({
-              id: p.id,
-              text: p.text,
-              type: 'coordinates' as const,
-              coordinates: { lat: p.lat, lng: p.lng },
-              formattedAddress: p.address,
-              name: p.name ?? p.address ?? p.text,
-            }))}
+            savedLocations={filteredSavedLocations}
             onLocationClick={(location) => {
               if (location.coordinates) {
                 handleLocationClick({
@@ -706,6 +778,7 @@ const OpenStreetMapApp = () => {
             onClose={() => openSavedRoutesList(false)}
             onRouteToggle={handleRouteToggle}
             visibleRouteIds={visibleRouteIds}
+            filteredRoutes={filteredRoutes}
           />
         </div>
       )}
